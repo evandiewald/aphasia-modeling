@@ -91,11 +91,16 @@ def main():
     for i in tqdm(range(0, len(test_utts), batch_size), desc="Inference"):
         batch_utts = test_utts[i : i + batch_size]
 
-        # Load audio for the batch
+        # Load audio for the batch (using segment timestamps)
         audios = []
         for utt in batch_utts:
             if utt.audio_path:
-                audio, _ = librosa.load(utt.audio_path, sr=16000, mono=True)
+                kwargs = {"sr": 16000, "mono": True}
+                if utt.start_time > 0 or utt.end_time > 0:
+                    kwargs["offset"] = utt.start_time
+                    if utt.end_time > utt.start_time:
+                        kwargs["duration"] = utt.end_time - utt.start_time
+                audio, _ = librosa.load(utt.audio_path, **kwargs)
                 audios.append(audio)
             else:
                 audios.append(np.zeros(16000, dtype=np.float32))
