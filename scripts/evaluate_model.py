@@ -45,6 +45,8 @@ def parse_args() -> argparse.Namespace:
                     help="Device (cuda/cpu), auto-detects if not set")
     p.add_argument("--batch_size", type=int, default=8,
                     help="Batch size for inference")
+    p.add_argument("--quick", type=int, default=0,
+                    help="Only run on N utterances (0 = all)")
     return p.parse_args()
 
 
@@ -57,6 +59,8 @@ def main():
     print(f"Loading dataset from {args.data_path}...")
     dataset = AphasiaBankDataset.load(args.data_path)
     _, _, test_utts = dataset.loso_split(args.test_speaker)
+    if args.quick > 0:
+        test_utts = test_utts[:args.quick]
     print(f"Test set: {len(test_utts)} utterances (speaker: {args.test_speaker})")
 
     # Load model

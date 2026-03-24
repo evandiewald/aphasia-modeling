@@ -48,6 +48,14 @@ class ParaphasiaPredictor:
         self.model.to(self.device)
         self.model.eval()
 
+        # Build generation kwargs — force English transcription and prevent loops
+        self._gen_kwargs = {
+            "max_length": 448,
+            "language": "en",
+            "task": "transcribe",
+            "no_repeat_ngram_size": 3,
+        }
+
     def predict(
         self,
         audio: np.ndarray,
@@ -82,7 +90,7 @@ class ParaphasiaPredictor:
             generated_ids = self.model.generate(
                 input_features,
                 attention_mask=attention_mask,
-                max_length=max_length,
+                **self._gen_kwargs,
             )
 
         # Decode, skipping special tokens except paraphasia tags
@@ -120,7 +128,7 @@ class ParaphasiaPredictor:
             generated_ids = self.model.generate(
                 input_features,
                 attention_mask=attention_mask,
-                max_length=max_length,
+                **self._gen_kwargs,
             )
 
         return [self._decode(ids) for ids in generated_ids]
