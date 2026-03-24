@@ -38,7 +38,12 @@ class ParaphasiaPredictor:
         self.device = torch.device(device)
 
         self.tokenizer = WhisperTokenizerFast.from_pretrained(model_path)
-        self.feature_extractor = WhisperFeatureExtractor.from_pretrained(model_path)
+        # Feature extractor may not be saved in intermediate checkpoints —
+        # fall back to base whisper config from the model's config
+        try:
+            self.feature_extractor = WhisperFeatureExtractor.from_pretrained(model_path)
+        except OSError:
+            self.feature_extractor = WhisperFeatureExtractor.from_pretrained("openai/whisper-small")
         self.model = WhisperForConditionalGeneration.from_pretrained(model_path)
         self.model.to(self.device)
         self.model.eval()
