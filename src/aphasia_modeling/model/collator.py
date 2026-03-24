@@ -164,10 +164,23 @@ class ParaphasiaDataCollator:
 
         labels = encoded.input_ids
 
-        # Replace pad token IDs with -100 so they're ignored in loss
-        labels = labels.masked_fill(
-            labels == self.tokenizer.pad_token_id, -100
-        )
+        # Replace pad tokens with -100 so they're ignored in loss.
+        # IMPORTANT: pad and eos share the same token ID in Whisper (50257).
+        # We must keep the FIRST occurrence (the real EOS) and only mask
+        # the trailing padding. For each sequence, find where padding starts
+        # (first pad token AFTER the last non-pad token).
+        pad_id = self.tokenizer.pad_token_id
+        for i in range(labels.size(0)):
+            # Find the first pad token after content ends
+            token_ids = labels[i].tolist()
+            # The EOS is the first occurrence of pad_id; padding starts after
+            try:
+                first_eos = token_ids.index(pad_id)
+                # Keep the EOS, mask everything after it
+                labels[i, first_eos + 1:] = -100
+            except ValueError:
+                # No pad/eos token found — nothing to mask
+                pass
 
         return labels
 
