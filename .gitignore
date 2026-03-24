@@ -9,10 +9,12 @@ wheels/
 # Virtual environments
 .venv
 
-data/
+datasets/
 checkpoints/
 .pytest_cache/
 .claude/
 .env
 wandb/
 checkpoints/
+
+.DS_Store
