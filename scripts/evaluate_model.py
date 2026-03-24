@@ -18,7 +18,9 @@ import json
 import sys
 from pathlib import Path
 
+import librosa
 import numpy as np
+import torch
 from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -61,32 +63,46 @@ def main():
     print(f"Loading model from {args.model_path}...")
     predictor = ParaphasiaPredictor(args.model_path, device=args.device)
 
-    # Run inference
+    # Use half precision for inference if on CUDA
+    if predictor.device.type == "cuda":
+        predictor.model = predictor.model.half()
+
+    # Build references and load audio in batches
     refs = []
     hyps = []
     results = []
+    batch_size = args.batch_size
 
-    for utt in tqdm(test_utts, desc="Inference"):
-        # Reference
+    # Pre-build all references
+    for utt in test_utts:
         ref_seq = to_single_seq(utt.words, utt.labels)
-        ref_tokens = ref_seq.split()
-        refs.append(ref_tokens)
-
-        # Prediction
-        if utt.audio_path:
-            hyp_text = predictor.predict_file(utt.audio_path)
-        else:
-            # No audio available — skip (will happen if audio isn't set up)
-            hyp_text = ""
-
-        hyp_tokens = hyp_text.split() if hyp_text else []
-        hyps.append(hyp_tokens)
-
+        refs.append(ref_seq.split())
         results.append({
             "utterance_id": utt.utterance_id,
             "reference": ref_seq,
-            "hypothesis": hyp_text,
+            "hypothesis": "",
         })
+
+    # Batched inference
+    for i in tqdm(range(0, len(test_utts), batch_size), desc="Inference"):
+        batch_utts = test_utts[i : i + batch_size]
+
+        # Load audio for the batch
+        audios = []
+        for utt in batch_utts:
+            if utt.audio_path:
+                audio, _ = librosa.load(utt.audio_path, sr=16000, mono=True)
+                audios.append(audio)
+            else:
+                audios.append(np.zeros(16000, dtype=np.float32))
+
+        # Batch predict
+        hyp_texts = predictor.predict_batch(audios)
+
+        for j, hyp_text in enumerate(hyp_texts):
+            idx = i + j
+            hyps.append(hyp_text.split() if hyp_text else [])
+            results[idx]["hypothesis"] = hyp_text
 
     # Compute metrics
     print("\nComputing metrics...")

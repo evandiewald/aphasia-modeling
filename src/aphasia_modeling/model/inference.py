@@ -68,12 +68,20 @@ class ParaphasiaPredictor:
             audio,
             sampling_rate=sampling_rate,
             return_tensors="pt",
+            padding="max_length",
         )
-        input_features = features.input_features.to(self.device)
+        input_features = features.input_features.to(
+            device=self.device, dtype=self.model.dtype
+        )
+
+        # Whisper doesn't use encoder attention mask — it always pads to 30s.
+        # Pass a dummy attention mask to suppress the false-positive warning.
+        attention_mask = torch.ones_like(input_features[:, 0, :], dtype=torch.long)
 
         with torch.no_grad():
             generated_ids = self.model.generate(
                 input_features,
+                attention_mask=attention_mask,
                 max_length=max_length,
             )
 
@@ -101,13 +109,17 @@ class ParaphasiaPredictor:
             audios,
             sampling_rate=sampling_rate,
             return_tensors="pt",
-            padding=True,
+            padding="max_length",
         )
-        input_features = features.input_features.to(self.device)
+        input_features = features.input_features.to(
+            device=self.device, dtype=self.model.dtype
+        )
+        attention_mask = torch.ones_like(input_features[:, 0, :], dtype=torch.long)
 
         with torch.no_grad():
             generated_ids = self.model.generate(
                 input_features,
+                attention_mask=attention_mask,
                 max_length=max_length,
             )
 
