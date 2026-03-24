@@ -24,7 +24,9 @@ class ParaphasiaTrainer(Seq2SeqTrainer):
         if self._class_weights is None:
             return super().compute_loss(model, inputs, return_outputs=return_outputs, **kwargs)
 
-        labels = inputs.pop("labels")
+        # Keep labels in inputs so model can derive decoder_input_ids,
+        # then compute our own weighted loss from the output logits.
+        labels = inputs["labels"]
         outputs = model(**inputs)
         logits = outputs.logits
 
