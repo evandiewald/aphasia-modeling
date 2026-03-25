@@ -55,7 +55,13 @@ def build_model(
             task=config.task,
         )
 
-    model = WhisperForConditionalGeneration.from_pretrained(config.model_name)
+    # Use Flash Attention 2 if available (requires flash-attn package + Ampere+ GPU)
+    try:
+        model = WhisperForConditionalGeneration.from_pretrained(
+            config.model_name, attn_implementation="flash_attention_2"
+        )
+    except (ValueError, ImportError):
+        model = WhisperForConditionalGeneration.from_pretrained(config.model_name)
 
     # Resize token embeddings to accommodate new paraphasia tokens
     old_vocab_size = model.config.vocab_size

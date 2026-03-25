@@ -31,6 +31,7 @@ packages = ["src/aphasia_modeling"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
+gpu = ["flash-attn>=2.5"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
