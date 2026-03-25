@@ -108,7 +108,9 @@ def parse_args() -> argparse.Namespace:
 
     # Paraphasia-specific
     p.add_argument("--class_weights", action="store_true", default=False,
-                    help="Apply class weighting ([p]=2, [n]=4)")
+                    help="Apply class weighting ([p]=10, [n]=20)")
+    p.add_argument("--oversample", type=int, default=1,
+                    help="Oversample paraphasia utterances N times (e.g., 4 = 4x)")
     p.add_argument("--freeze_encoder", action="store_true", default=False,
                     help="Freeze encoder during training")
     p.add_argument("--time_perturbation", action="store_true", default=False,
@@ -176,8 +178,8 @@ def train_fold(
         apply_time_perturbation=args.time_perturbation,
     )
 
-    # Convert to HF datasets
-    train_ds = dataset.to_hf_dataset(train_utts)
+    # Convert to HF datasets (oversample paraphasia utterances in train only)
+    train_ds = dataset.to_hf_dataset(train_utts, oversample_paraphasia=args.oversample)
     dev_ds = dataset.to_hf_dataset(dev_utts)
 
     # Class weights
@@ -208,6 +210,7 @@ def train_fold(
                 "batch_size": args.batch_size,
                 "grad_accum": args.grad_accum,
                 "class_weights": args.class_weights,
+                "oversample": args.oversample,
                 "freeze_encoder": args.freeze_encoder,
                 "time_perturbation": args.time_perturbation,
             },

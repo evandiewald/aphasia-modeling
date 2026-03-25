@@ -114,8 +114,8 @@ class TestModel:
         assert weights.shape == (len(tokenizer),)
 
         ids = get_paraphasia_token_ids(tokenizer)
-        assert weights[ids["[p]"]] == 2.0
-        assert weights[ids["[n]"]] == 4.0
+        assert weights[ids["[p]"]] == 10.0
+        assert weights[ids["[n]"]] == 20.0
         # Normal tokens should be 1.0
         assert weights[0] == 1.0
 

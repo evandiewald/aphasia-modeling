@@ -14,8 +14,8 @@ PARAPHASIA_TOKENS = ["[p]", "[n]"]
 
 # Class weights from CHAI paper (correct=1 is implicit via CE loss)
 PARAPHASIA_CLASS_WEIGHTS = {
-    "[p]": 2.0,
-    "[n]": 4.0,
+    "[p]": 10.0,
+    "[n]": 20.0,
 }
 
 

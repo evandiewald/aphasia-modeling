@@ -126,15 +126,35 @@ class AphasiaBankDataset:
             })
         return pd.DataFrame(records)
 
-    def to_hf_dataset(self, utterances: list[Utterance] | None = None):
+    def to_hf_dataset(
+        self,
+        utterances: list[Utterance] | None = None,
+        oversample_paraphasia: int = 1,
+    ):
         """Convert utterances to a HuggingFace Dataset.
 
         Requires the `datasets` package. Audio loading is deferred
         (paths stored, loaded on access via Audio feature).
+
+        Args:
+            utterances: Utterances to include. Defaults to all.
+            oversample_paraphasia: Repeat utterances containing paraphasias
+                this many extra times (e.g., 3 = 4x total for paraphasia utts).
         """
         from datasets import Dataset, Features, Value
 
         utts = utterances or self.utterances
+
+        # Oversample: repeat paraphasia-containing utterances
+        if oversample_paraphasia > 1:
+            expanded = []
+            for utt in utts:
+                expanded.append(utt)
+                if any(l in ("p", "n") for l in utt.labels):
+                    for _ in range(oversample_paraphasia - 1):
+                        expanded.append(utt)
+            utts = expanded
+
         records = []
         for utt in utts:
             records.append({
