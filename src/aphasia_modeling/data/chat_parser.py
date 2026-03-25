@@ -16,6 +16,9 @@ from pathlib import Path
 # e.g., "fridriksson01a" -> "fridriksson01", "fridriksson03b" -> "fridriksson03"
 _FRIDRIKSSON_SPK_PATTERN = re.compile(r"^(fridriksson\d+)[a-z]$")
 
+# Fridriksson-2 sessions are named like "1003-1", "1003-LARC" -> speaker "1003"
+_FRIDRIKSSON2_SPK_PATTERN = re.compile(r"^(\d+)-(?:\d+|LARC)$")
+
 
 @dataclass
 class Utterance:
@@ -168,6 +171,9 @@ def _session_to_speaker(session_id: str) -> str:
     is used as-is.
     """
     m = _FRIDRIKSSON_SPK_PATTERN.match(session_id)
+    if m:
+        return m.group(1)
+    m = _FRIDRIKSSON2_SPK_PATTERN.match(session_id)
     if m:
         return m.group(1)
     return session_id
