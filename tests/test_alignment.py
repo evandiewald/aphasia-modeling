@@ -24,17 +24,17 @@ class TestStripParaphasiaTags:
 
     def test_multiple_tags(self):
         words, tags = strip_paraphasia_tags(
-            ["the", "cat", "[p]", "sat", "on", "[s]", "mat"]
+            ["the", "cat", "[p]", "sat", "on", "[n]", "mat"]
         )
         assert words == ["the", "cat", "sat", "on", "mat"]
-        assert tags == {1: "p", 3: "s"}
+        assert tags == {1: "p", 3: "n"}
 
-    def test_all_three_types(self):
+    def test_both_types(self):
         words, tags = strip_paraphasia_tags(
-            ["a", "[p]", "b", "[n]", "c", "[s]"]
+            ["a", "[p]", "b", "[n]"]
         )
-        assert words == ["a", "b", "c"]
-        assert tags == {0: "p", 1: "n", 2: "s"}
+        assert words == ["a", "b"]
+        assert tags == {0: "p", 1: "n"}
 
     def test_c_tag(self):
         words, tags = strip_paraphasia_tags(["the", "[c]", "cat"])
@@ -160,7 +160,7 @@ class TestReinsertParaphasiaTags:
         assert result == ["a", "[p]", "b", "[n]"]
 
     def test_roundtrip_with_strip(self):
-        original = ["the", "cat", "[p]", "sat", "on", "[s]", "mat"]
+        original = ["the", "cat", "[p]", "sat", "on", "[n]", "mat"]
         words, tag_map = strip_paraphasia_tags(original)
         labels = [tag_map.get(i, "c") for i in range(len(words))]
         reconstructed = reinsert_paraphasia_tags(words, labels)

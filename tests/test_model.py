@@ -57,9 +57,9 @@ class TestTokenizer:
 
     def test_get_paraphasia_token_ids(self, tokenizer):
         ids = get_paraphasia_token_ids(tokenizer)
-        assert set(ids.keys()) == {"[p]", "[n]", "[s]"}
+        assert set(ids.keys()) == {"[p]", "[n]"}
         # All IDs should be unique
-        assert len(set(ids.values())) == 3
+        assert len(set(ids.values())) == 2
 
     def test_token_ids_are_beyond_original_vocab(self, tokenizer):
         """Paraphasia tokens should have IDs at the end of the vocab."""
@@ -69,11 +69,11 @@ class TestTokenizer:
             assert token_id >= 51864, f"{token} has unexpectedly low ID: {token_id}"
 
     def test_decode_preserves_paraphasia_tokens(self, tokenizer):
-        text = "the cat [p] sat on mat [s]"
+        text = "the cat [p] sat on mat [n]"
         encoded = tokenizer.encode(text, add_special_tokens=False)
         decoded = tokenizer.decode(encoded, skip_special_tokens=False)
         assert "[p]" in decoded
-        assert "[s]" in decoded
+        assert "[n]" in decoded
 
 
 # ---- Model -------------------------------------------------------------------
@@ -116,7 +116,6 @@ class TestModel:
         ids = get_paraphasia_token_ids(tokenizer)
         assert weights[ids["[p]"]] == 2.0
         assert weights[ids["[n]"]] == 4.0
-        assert weights[ids["[s]"]] == 10.0
         # Normal tokens should be 1.0
         assert weights[0] == 1.0
 
@@ -217,7 +216,7 @@ class TestCollator:
 
 class TestInferenceDecode:
     def test_decode_strips_whisper_special_tokens(self, model_and_tokenizer):
-        """The _decode method should remove <|...|> tokens but keep [p]/[n]/[s]."""
+        """The _decode method should remove <|...|> tokens but keep [p]/[n]."""
         from aphasia_modeling.model.inference import ParaphasiaPredictor
 
         _, tokenizer = model_and_tokenizer

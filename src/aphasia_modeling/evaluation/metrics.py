@@ -4,7 +4,7 @@ All metrics:
 - WER: Standard word error rate (paraphasia tags stripped)
 - AWER: Augmented WER on word/label compound tokens
 - TD-binary: Temporal distance for binary paraphasia detection
-- TD-multiclass: Per-class temporal distance (TD-[p], TD-[n], TD-[s], TD-all)
+- TD-multiclass: Per-class temporal distance (TD-[p], TD-[n], TD-all)
 - Utterance-level F1: Per-class binary classification at utterance level
 """
 
@@ -34,15 +34,12 @@ class MetricResult:
     td_binary: float = 0.0
     td_p: float = 0.0
     td_n: float = 0.0
-    td_s: float = 0.0
     td_all: float = 0.0
 
     f1_p: float = 0.0
     f1_n: float = 0.0
-    f1_s: float = 0.0
     recall_p: float = 0.0
     recall_n: float = 0.0
-    recall_s: float = 0.0
 
     num_utterances: int = 0
 
@@ -54,14 +51,11 @@ class MetricResult:
             f"TD-binary: {self.td_binary:.4f}",
             f"TD-[p]:    {self.td_p:.4f}",
             f"TD-[n]:    {self.td_n:.4f}",
-            f"TD-[s]:    {self.td_s:.4f}",
             f"TD-all:    {self.td_all:.4f}",
             f"F1-[p]:    {self.f1_p:.4f}",
             f"F1-[n]:    {self.f1_n:.4f}",
-            f"F1-[s]:    {self.f1_s:.4f}",
             f"Recall-[p]: {self.recall_p:.4f}",
             f"Recall-[n]: {self.recall_n:.4f}",
-            f"Recall-[s]: {self.recall_s:.4f}",
             f"Utterances: {self.num_utterances}",
         ]
         return "\n".join(lines)
@@ -162,18 +156,18 @@ def compute_td_multiclass(
 ) -> dict[str, float]:
     """Per-class temporal distance.
 
-    Returns dict with keys "p", "n", "s", "all".
+    Returns dict with keys "p", "n", "all".
     """
-    td_per_class = {"p": [], "n": [], "s": []}
+    td_per_class = {"p": [], "n": []}
 
     for ref, hyp in zip(refs, hyps):
-        for cls in ("p", "n", "s"):
+        for cls in ("p", "n"):
             td = _td_for_utterance(ref, hyp, target_class=cls)
             if td is not None:
                 td_per_class[cls].append(td)
 
     result = {}
-    for cls in ("p", "n", "s"):
+    for cls in ("p", "n"):
         result[cls] = float(np.mean(td_per_class[cls])) if td_per_class[cls] else 0.0
     result["all"] = sum(result.values())
     return result
@@ -207,8 +201,8 @@ def _td_for_utterance(
         ref_positions = [i for i, l in enumerate(ref_labels) if l == target_class]
         hyp_positions = [i for i, l in enumerate(hyp_labels) if l == target_class]
     elif not class_specific:
-        ref_positions = [i for i, l in enumerate(ref_labels) if l in ("p", "n", "s")]
-        hyp_positions = [i for i, l in enumerate(hyp_labels) if l in ("p", "n", "s")]
+        ref_positions = [i for i, l in enumerate(ref_labels) if l in ("p", "n")]
+        hyp_positions = [i for i, l in enumerate(hyp_labels) if l in ("p", "n")]
     else:
         return None
 
@@ -251,7 +245,7 @@ def compute_utterance_f1(
     "recall".
     """
     result = {}
-    for cls in ("p", "n", "s"):
+    for cls in ("p", "n"):
         ref_binary = []
         hyp_binary = []
         for ref, hyp in zip(refs, hyps):
@@ -294,15 +288,12 @@ def compute_all_metrics(
     td_mc = compute_td_multiclass(refs, hyps)
     result.td_p = td_mc["p"]
     result.td_n = td_mc["n"]
-    result.td_s = td_mc["s"]
     result.td_all = td_mc["all"]
 
     utt_f1 = compute_utterance_f1(refs, hyps)
     result.f1_p = utt_f1["p"]["f1"]
     result.f1_n = utt_f1["n"]["f1"]
-    result.f1_s = utt_f1["s"]["f1"]
     result.recall_p = utt_f1["p"]["recall"]
     result.recall_n = utt_f1["n"]["recall"]
-    result.recall_s = utt_f1["s"]["recall"]
 
     return result

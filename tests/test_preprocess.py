@@ -77,9 +77,10 @@ class TestErrorCodes:
         utt = _preprocess("the blicket [* n] sat")
         assert utt.labels[1] == "n"
 
-    def test_semantic(self):
+    def test_semantic_treated_as_correct(self):
+        """Semantic paraphasias are handled by Stage 2 LLM, not acoustic model."""
         utt = _preprocess("the table [* s] sat")
-        assert utt.labels[1] == "s"
+        assert utt.labels[1] == "c"
 
     def test_subtype_p_colon_k(self):
         """[* p:k] should map to 'p'."""
@@ -97,9 +98,9 @@ class TestErrorCodes:
         assert utt.labels[1] == "c"
 
     def test_multiple_errors(self):
-        utt = _preprocess("the cot [* p] sat on mat [* s]")
+        utt = _preprocess("the cot [* p] sat on mat [* n]")
         assert utt.words == ["the", "cot", "sat", "on", "mat"]
-        assert utt.labels == ["c", "p", "c", "c", "s"]
+        assert utt.labels == ["c", "p", "c", "c", "n"]
 
     def test_correct_words_default_to_c(self):
         utt = _preprocess("the cat sat")
@@ -272,9 +273,9 @@ class TestSingleSeq:
     def test_multiple_labels(self):
         result = to_single_seq(
             ["the", "cat", "sat", "on", "mat"],
-            ["c", "p", "c", "c", "s"],
+            ["c", "p", "c", "c", "n"],
         )
-        assert result == "the cat [p] sat on mat [s]"
+        assert result == "the cat [p] sat on mat [n]"
 
     def test_neologistic(self):
         result = to_single_seq(["blick", "sat"], ["n", "c"])
@@ -282,7 +283,7 @@ class TestSingleSeq:
 
     def test_roundtrip(self):
         words = ["the", "cat", "sat", "on", "mat"]
-        labels = ["c", "p", "c", "c", "s"]
+        labels = ["c", "p", "c", "c", "n"]
         seq = to_single_seq(words, labels)
         parsed_words, parsed_labels = parse_single_seq(seq)
         assert parsed_words == words
@@ -300,8 +301,8 @@ class TestSingleSeq:
         assert labels == ["c", "c"]
 
     def test_roundtrip_all_paraphasic(self):
-        words = ["blick", "table", "gorp"]
-        labels = ["n", "s", "p"]
+        words = ["blick", "gorp"]
+        labels = ["n", "p"]
         seq = to_single_seq(words, labels)
         pw, pl = parse_single_seq(seq)
         assert pw == words
@@ -344,9 +345,10 @@ class TestEndToEnd:
 
     def test_multiple_paraphasia_types(self):
         utt = _preprocess("the dog [* s] ran to blick [* n] and cot [* p]")
-        assert utt.labels == ["c", "s", "c", "c", "n", "c", "p"]
+        # [* s] -> "c" (semantic handled by Stage 2 LLM)
+        assert utt.labels == ["c", "c", "c", "c", "n", "c", "p"]
         seq = to_single_seq(utt.words, utt.labels)
-        assert seq == "the dog [s] ran to blick [n] and cot [p]"
+        assert seq == "the dog ran to blick [n] and cot [p]"
 
     def test_clean_utterance_all_correct(self):
         utt = _preprocess("the cat sat on the mat")

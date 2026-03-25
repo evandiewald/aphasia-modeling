@@ -1,7 +1,8 @@
 """Extend Whisper's tokenizer with paraphasia special tokens.
 
-Adds [p] (phonemic), [n] (neologistic), [s] (semantic) as single tokens
-that the decoder can emit inline with word tokens.
+Adds [p] (phonemic) and [n] (neologistic) as single tokens that the
+decoder can emit inline with word tokens. Semantic paraphasias ([s]) are
+handled by a separate Stage 2 LLM pass.
 """
 
 from __future__ import annotations
@@ -9,13 +10,12 @@ from __future__ import annotations
 from transformers import WhisperTokenizerFast, WhisperTokenizer
 
 
-PARAPHASIA_TOKENS = ["[p]", "[n]", "[s]"]
+PARAPHASIA_TOKENS = ["[p]", "[n]"]
 
 # Class weights from CHAI paper (correct=1 is implicit via CE loss)
 PARAPHASIA_CLASS_WEIGHTS = {
     "[p]": 2.0,
     "[n]": 4.0,
-    "[s]": 10.0,
 }
 
 
@@ -32,7 +32,7 @@ def build_tokenizer(
         task: Whisper task ("transcribe" or "translate").
 
     Returns:
-        Tokenizer with [p], [n], [s] added as special tokens.
+        Tokenizer with [p], [n] added as special tokens.
         Use tokenizer.additional_special_tokens_ids to get their IDs.
     """
     tokenizer = WhisperTokenizerFast.from_pretrained(

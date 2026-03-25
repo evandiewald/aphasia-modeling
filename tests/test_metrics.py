@@ -60,8 +60,8 @@ class TestAWER:
     def test_wrong_tag_counts_as_error(self):
         """Correct word but wrong tag -> the compound token differs."""
         refs = [["cat", "[p]"]]
-        hyps = [["cat", "[s]"]]
-        # ref: "cat/p", hyp: "cat/s" -> 1 sub, AWER = 1.0
+        hyps = [["cat", "[n]"]]
+        # ref: "cat/p", hyp: "cat/n" -> 1 sub, AWER = 1.0
         assert compute_awer(refs, hyps) == pytest.approx(1.0)
 
     def test_missing_tag_counts_as_error(self):
@@ -88,13 +88,6 @@ class TestAWER_PD:
         # ref: "p", hyp: "p" (words dropped for p/n)
         assert compute_awer_pd(refs, hyps) == 0.0
 
-    def test_semantic_keeps_word(self):
-        """For s, the word matters."""
-        refs = [["table", "[s]"]]
-        hyps = [["chair", "[s]"]]
-        # ref: "table/s", hyp: "chair/s" -> different compound
-        assert compute_awer_pd(refs, hyps) == pytest.approx(1.0)
-
     def test_correct_words_keep_word(self):
         refs = [["the", "cat"]]
         hyps = [["the", "dog"]]
@@ -108,8 +101,8 @@ class TestAWER_PD:
 class TestTDBinary:
     def test_perfect_detection(self):
         """Paraphasias at same positions -> TD = 0."""
-        refs = [["the", "cat", "[p]", "sat", "on", "mat", "[s]"]]
-        hyps = [["the", "cat", "[p]", "sat", "on", "mat", "[s]"]]
+        refs = [["the", "cat", "[p]", "sat", "on", "mat", "[n]"]]
+        hyps = [["the", "cat", "[p]", "sat", "on", "mat", "[n]"]]
         td = compute_td_binary(refs, hyps)
         assert td == pytest.approx(0.0)
 
@@ -147,7 +140,6 @@ class TestTDMulticlass:
         td = compute_td_multiclass(refs, hyps)
         assert td["p"] == pytest.approx(0.0)
         assert td["n"] == pytest.approx(0.0)
-        assert td["s"] == 0.0  # No s paraphasias
         assert td["all"] == pytest.approx(0.0)
 
     def test_wrong_class_not_matched(self):
@@ -161,10 +153,10 @@ class TestTDMulticlass:
         assert td["n"] > 0
 
     def test_td_all_is_sum(self):
-        refs = [["a", "[p]", "b", "[n]", "c", "[s]"]]
-        hyps = [["a", "[p]", "b", "[n]", "c", "[s]"]]
+        refs = [["a", "[p]", "b", "[n]", "c"]]
+        hyps = [["a", "[p]", "b", "[n]", "c"]]
         td = compute_td_multiclass(refs, hyps)
-        assert td["all"] == pytest.approx(td["p"] + td["n"] + td["s"])
+        assert td["all"] == pytest.approx(td["p"] + td["n"])
 
 
 # ---- Utterance-level F1 ------------------------------------------------------
@@ -201,7 +193,6 @@ class TestUtteranceF1:
         f1 = compute_utterance_f1(refs, hyps)
         assert f1["p"]["f1"] == 0.0
         assert f1["n"]["f1"] == 0.0
-        assert f1["s"]["f1"] == 0.0
 
     def test_multi_utterance_f1(self):
         refs = [
@@ -221,11 +212,11 @@ class TestUtteranceF1:
         assert f1["p"]["recall"] == pytest.approx(0.5)
 
     def test_each_class_independent(self):
-        refs = [["a", "[p]", "b", "[s]"]]
-        hyps = [["a", "[p]", "b"]]  # Got p, missed s
+        refs = [["a", "[p]", "b", "[n]"]]
+        hyps = [["a", "[p]", "b"]]  # Got p, missed n
         f1 = compute_utterance_f1(refs, hyps)
         assert f1["p"]["f1"] == pytest.approx(1.0)
-        assert f1["s"]["recall"] == pytest.approx(0.0)
+        assert f1["n"]["recall"] == pytest.approx(0.0)
 
 
 # ---- compute_all_metrics integration -----------------------------------------

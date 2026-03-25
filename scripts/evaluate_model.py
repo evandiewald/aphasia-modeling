@@ -128,11 +128,9 @@ def main():
         "td_binary": metrics.td_binary,
         "td_p": metrics.td_p,
         "td_n": metrics.td_n,
-        "td_s": metrics.td_s,
         "td_all": metrics.td_all,
         "f1_p": metrics.f1_p,
         "f1_n": metrics.f1_n,
-        "f1_s": metrics.f1_s,
     }
     (output_dir / "metrics.json").write_text(json.dumps(metrics_dict, indent=2))
     (output_dir / "predictions.json").write_text(json.dumps(results, indent=2))

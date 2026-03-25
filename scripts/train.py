@@ -108,7 +108,7 @@ def parse_args() -> argparse.Namespace:
 
     # Paraphasia-specific
     p.add_argument("--class_weights", action="store_true", default=False,
-                    help="Apply class weighting ([p]=2, [n]=4, [s]=10)")
+                    help="Apply class weighting ([p]=2, [n]=4)")
     p.add_argument("--freeze_encoder", action="store_true", default=False,
                     help="Freeze encoder during training")
     p.add_argument("--time_perturbation", action="store_true", default=False,
@@ -191,7 +191,9 @@ def train_fold(
     if args.wandb:
         import wandb
         report_to = "wandb"
-        run_name = args.wandb_run_name or f"fold-{test_speaker}"
+        from datetime import datetime
+        ts = datetime.now().strftime("%m%d-%H%M")
+        run_name = args.wandb_run_name or f"fold-{test_speaker}-{ts}"
         wandb.init(
             project=args.wandb_project,
             name=run_name,

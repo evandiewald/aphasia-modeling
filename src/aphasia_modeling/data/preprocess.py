@@ -122,7 +122,7 @@ def to_single_seq(words: list[str], labels: list[str]) -> str:
     parts = []
     for word, label in zip(words, labels):
         parts.append(word)
-        if label in ("p", "n", "s"):
+        if label in ("p", "n"):
             parts.append(f"[{label}]")
     return " ".join(parts)
 
@@ -136,10 +136,10 @@ def parse_single_seq(text: str) -> tuple[list[str], list[str]]:
     words = []
     labels = []
     for token in tokens:
-        if token in ("[p]", "[n]", "[s]"):
+        if token in ("[p]", "[n]"):
             # Attach label to the preceding word
             if labels:
-                labels[-1] = token[1]  # "p", "n", or "s"
+                labels[-1] = token[1]  # "p" or "n"
         else:
             words.append(token)
             labels.append("c")
@@ -317,11 +317,10 @@ def _extract_error_code(block: list[str]) -> str:
         return "p"
     elif code.startswith("n"):
         return "n"
-    elif code.startswith("s"):
-        return "s"
     else:
-        # Other error types (d=dysfluency, m=morphological, f=formal, etc.)
-        # Treat as correct for paraphasia detection purposes
+        # Semantic paraphasias (s) are handled by Stage 2 LLM, not the
+        # acoustic model. All other error types (d, m, f, s, etc.) are
+        # treated as correct for Stage 1.
         return "c"
 
 
