@@ -234,7 +234,7 @@ def train_fold(
         eval_steps=args.max_steps if args.max_steps > 0 else None,
         save_strategy="steps" if args.max_steps > 0 else "epoch",
         save_steps=args.max_steps if args.max_steps > 0 else None,
-        save_total_limit=3,
+        save_total_limit=1,
         load_best_model_at_end=False if args.max_steps > 0 else True,
         metric_for_best_model="eval_loss" if args.max_steps <= 0 else None,
         greater_is_better=False if args.max_steps <= 0 else None,
