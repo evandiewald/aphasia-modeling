@@ -6,6 +6,7 @@ from pathlib import Path
 
 import torch
 from transformers import Seq2SeqTrainer
+from transformers.trainer_utils import EvalLoopOutput
 
 from .classifier import WhisperWithParaphasiaHead, CLS_CORRECT, CLS_PHONEMIC, CLS_NEOLOGISTIC
 
@@ -87,7 +88,12 @@ class ParaphasiaTrainer(Seq2SeqTrainer):
             self.args, self.state, self.control, metrics
         )
 
-        return metrics
+        return EvalLoopOutput(
+            predictions=None,
+            label_ids=None,
+            metrics=metrics,
+            num_samples=n_batches * dataloader.batch_size if hasattr(dataloader, 'batch_size') else n_batches,
+        )
 
     def _save(self, output_dir=None, state_dict=None):
         """Override default save to handle shared Whisper tensors."""
