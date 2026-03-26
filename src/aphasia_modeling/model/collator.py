@@ -15,7 +15,8 @@ import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
-warnings.filterwarnings("ignore", message=".*audioread.*", category=FutureWarning)
+warnings.filterwarnings("ignore", message=".*audioread.*")
+warnings.filterwarnings("ignore", message=".*PySoundFile failed.*")
 
 import librosa
 import numpy as np
