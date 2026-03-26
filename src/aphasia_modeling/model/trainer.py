@@ -50,21 +50,19 @@ class ParaphasiaTrainer(Seq2SeqTrainer):
                     input_features=inputs["input_features"],
                     labels=inputs["labels"],
                     cls_labels=inputs.get("cls_labels"),
-                    output_hidden_states=True,
                 )
 
             total_loss += outputs.loss.item()
-            if hasattr(outputs, "cls_loss"):
-                total_cls_loss += outputs.cls_loss.item()
-                total_asr_loss += (outputs.loss - model.alpha * outputs.cls_loss).item()
+            if model._last_cls_loss is not None:
+                total_cls_loss += model._last_cls_loss
+                total_asr_loss += model._last_asr_loss
 
-                # Get classification predictions
+                # Get classification predictions from hidden states
                 decoder_hidden = outputs.decoder_hidden_states[-1]
                 cls_logits = model.classifier(decoder_hidden)
-                cls_preds = cls_logits.argmax(dim=-1)  # (batch, seq_len)
+                cls_preds = cls_logits.argmax(dim=-1)
                 cls_targets = inputs["cls_labels"]
 
-                # Only keep non-ignored positions
                 mask = cls_targets != -100
                 all_cls_preds.append(cls_preds[mask].cpu())
                 all_cls_targets.append(cls_targets[mask].cpu())

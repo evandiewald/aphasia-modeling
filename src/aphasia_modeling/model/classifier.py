@@ -110,6 +110,8 @@ class WhisperWithParaphasiaHead(nn.Module):
             cls_labels: Per-token classification targets (0=correct, 1=[p],
                 2=[n], -100=ignore). Same shape as labels.
         """
+        # Always request hidden states; remove from kwargs to avoid duplicates
+        kwargs.pop("output_hidden_states", None)
         outputs = self.whisper(
             input_features=input_features,
             labels=labels,
@@ -135,6 +137,12 @@ class WhisperWithParaphasiaHead(nn.Module):
             )
 
             outputs.loss = outputs.loss + self.alpha * cls_loss
+            # Store for logging (can't add attrs to Seq2SeqLMOutput)
+            self._last_cls_loss = cls_loss.item()
+            self._last_asr_loss = (outputs.loss - self.alpha * cls_loss).item()
+        else:
+            self._last_cls_loss = None
+            self._last_asr_loss = None
 
         return outputs
 
