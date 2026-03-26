@@ -1,4 +1,4 @@
-"""Custom trainer with class-weighted loss for paraphasia tokens."""
+"""Custom trainer with class-weighted loss and logit bias for paraphasia tokens."""
 
 from __future__ import annotations
 
@@ -10,35 +10,43 @@ from transformers import Seq2SeqTrainer
 
 
 class ParaphasiaTrainer(Seq2SeqTrainer):
-    """Seq2SeqTrainer with optional per-token class weighting.
+    """Seq2SeqTrainer with optional per-token class weighting and logit bias.
 
-    Overrides compute_loss to apply higher weights to paraphasia tokens
-    ([p]=2, [n]=4, [s]=10) to handle class imbalance.
+    Supports two mechanisms for handling class imbalance:
+    - class_weights: Per-token weights in the cross-entropy loss
+    - logit_bias: Additive bias on paraphasia token logits before loss,
+      making it easier for the model to emit them (they compete against 51k+ tokens)
     """
 
-    def __init__(self, class_weights: torch.Tensor | None = None, **kwargs):
+    def __init__(
+        self,
+        class_weights: torch.Tensor | None = None,
+        paraphasia_logit_bias: dict[int, float] | None = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self._class_weights = class_weights
+        self._logit_bias = paraphasia_logit_bias  # {token_id: bias_value}
 
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
-        if self._class_weights is None:
+        if self._class_weights is None and self._logit_bias is None:
             return super().compute_loss(model, inputs, return_outputs=return_outputs, **kwargs)
 
-        # Keep labels in inputs so model can derive decoder_input_ids,
-        # then compute our own weighted loss from the output logits.
         labels = inputs["labels"]
         outputs = model(**inputs)
         logits = outputs.logits
 
-        # Move weights to same device as logits
-        weights = self._class_weights.to(logits.device)
+        # Apply logit bias: boost paraphasia token logits before loss
+        if self._logit_bias:
+            for token_id, bias in self._logit_bias.items():
+                logits[:, :, token_id] += bias
 
-        loss_fct = nn.CrossEntropyLoss(
-            weight=weights,
-            ignore_index=-100,
-        )
+        if self._class_weights is not None:
+            weights = self._class_weights.to(logits.device)
+            loss_fct = nn.CrossEntropyLoss(weight=weights, ignore_index=-100)
+        else:
+            loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
 
-        # Reshape for cross entropy: (batch * seq_len, vocab_size)
         loss = loss_fct(
             logits.view(-1, logits.size(-1)),
             labels.view(-1),

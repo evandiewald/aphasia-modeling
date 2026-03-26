@@ -60,7 +60,7 @@ from transformers import (
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from aphasia_modeling.data.dataset import AphasiaBankDataset
-from aphasia_modeling.model.tokenizer import build_tokenizer
+from aphasia_modeling.model.tokenizer import build_tokenizer, get_paraphasia_token_ids
 from aphasia_modeling.model.whisper import (
     build_model,
     WhisperParaphasiaConfig,
@@ -111,6 +111,8 @@ def parse_args() -> argparse.Namespace:
                     help="Apply class weighting ([p]=10, [n]=20)")
     p.add_argument("--oversample", type=int, default=1,
                     help="Oversample paraphasia utterances N times (e.g., 4 = 4x)")
+    p.add_argument("--logit_bias", type=float, default=0.0,
+                    help="Additive bias on paraphasia token logits (e.g., 5.0)")
     p.add_argument("--freeze_encoder", action="store_true", default=False,
                     help="Freeze encoder during training")
     p.add_argument("--time_perturbation", action="store_true", default=False,
@@ -187,6 +189,12 @@ def train_fold(
     if args.class_weights:
         class_weights = get_class_weight_tensor(tokenizer)
 
+    # Logit bias for paraphasia tokens
+    logit_bias = None
+    if args.logit_bias > 0:
+        para_ids = get_paraphasia_token_ids(tokenizer)
+        logit_bias = {tid: args.logit_bias for tid in para_ids.values()}
+
     # Wandb setup
     report_to = "none"
     run_name = None
@@ -211,6 +219,7 @@ def train_fold(
                 "grad_accum": args.grad_accum,
                 "class_weights": args.class_weights,
                 "oversample": args.oversample,
+                "logit_bias": args.logit_bias,
                 "freeze_encoder": args.freeze_encoder,
                 "time_perturbation": args.time_perturbation,
             },
@@ -256,6 +265,7 @@ def train_fold(
     # Trainer
     trainer = ParaphasiaTrainer(
         class_weights=class_weights,
+        paraphasia_logit_bias=logit_bias,
         model=model,
         args=training_args,
         train_dataset=train_ds,
