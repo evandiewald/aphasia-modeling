@@ -55,10 +55,12 @@ def build_model(
             task=config.task,
         )
 
-    # Use Flash Attention 2 if available (requires flash-attn package + Ampere+ GPU)
+    # Use SDPA (PyTorch native scaled dot-product attention) if available.
+    # This uses Flash Attention kernels under the hood on Ampere+ GPUs,
+    # without requiring the flash-attn package.
     try:
         model = WhisperForConditionalGeneration.from_pretrained(
-            config.model_name, attn_implementation="flash_attention_2"
+            config.model_name, attn_implementation="sdpa"
         )
     except (ValueError, ImportError):
         model = WhisperForConditionalGeneration.from_pretrained(config.model_name)
