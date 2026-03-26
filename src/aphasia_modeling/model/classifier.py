@@ -169,7 +169,7 @@ class WhisperWithParaphasiaHead(nn.Module):
     def save_pretrained(self, path: str | Path) -> None:
         """Save both Whisper and classifier head."""
         path = Path(path)
-        self.whisper.save_pretrained(path)
+        self.whisper.save_pretrained(path, safe_serialization=True)
         torch.save(
             self.classifier.state_dict(),
             path / "classifier_head.pt",
