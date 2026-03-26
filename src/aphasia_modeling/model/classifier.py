@@ -167,13 +167,17 @@ class WhisperWithParaphasiaHead(nn.Module):
         return self.whisper.generate(*args, **kwargs)
 
     def save_pretrained(self, path: str | Path) -> None:
-        """Save both Whisper and classifier head."""
+        """Save Whisper (HF format) and classifier head (safetensors)."""
+        from safetensors.torch import save_file
+
         path = Path(path)
-        self.whisper.save_pretrained(path, safe_serialization=True)
-        torch.save(
-            self.classifier.state_dict(),
-            path / "classifier_head.pt",
-        )
+        path.mkdir(parents=True, exist_ok=True)
+
+        # Save Whisper in standard HF format (handles shared tensors)
+        self.whisper.save_pretrained(path)
+
+        # Save classifier head separately
+        save_file(self.classifier.state_dict(), path / "classifier_head.safetensors")
 
     @classmethod
     def from_pretrained(
@@ -183,14 +187,16 @@ class WhisperWithParaphasiaHead(nn.Module):
         cls_class_weights: list[float] | None = None,
         device: str | None = None,
     ) -> WhisperWithParaphasiaHead:
-        """Load both Whisper and classifier head from a checkpoint."""
+        """Load Whisper and classifier head from a checkpoint."""
+        from safetensors.torch import load_file
+
         path = Path(path)
         whisper = WhisperForConditionalGeneration.from_pretrained(path)
         model = cls(whisper, alpha=alpha, cls_class_weights=cls_class_weights)
 
-        head_path = path / "classifier_head.pt"
+        head_path = path / "classifier_head.safetensors"
         if head_path.exists():
-            state = torch.load(head_path, map_location=device or "cpu")
+            state = load_file(head_path, device=device or "cpu")
             model.classifier.load_state_dict(state)
 
         return model
