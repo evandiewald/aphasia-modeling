@@ -112,6 +112,8 @@ def parse_args() -> argparse.Namespace:
                     help="Oversample paraphasia utterances N times (e.g., 4 = 4x)")
     p.add_argument("--freeze_encoder", action="store_true", default=False,
                     help="Freeze encoder during training")
+    p.add_argument("--freeze_decoder", action="store_true", default=False,
+                    help="Freeze decoder during training (train only classification head)")
     p.add_argument("--time_perturbation", action="store_true", default=False,
                     help="Apply SpecAugment time perturbation")
 
@@ -167,6 +169,7 @@ def train_fold(
     config = WhisperParaphasiaConfig(
         model_name=args.model_name,
         freeze_encoder=args.freeze_encoder,
+        freeze_decoder=args.freeze_decoder,
         cls_alpha=args.cls_alpha,
         cls_class_weights=cls_class_weights,
     )
