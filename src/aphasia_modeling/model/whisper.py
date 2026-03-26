@@ -2,14 +2,14 @@
 
 Handles:
 - Loading pretrained Whisper (unmodified vocabulary)
-- Wrapping with WhisperWithParaphasiaHead for classification
+- Wrapping with WhisperWithParaphasiaHead for utterance classification
 - Configuring generation parameters
-- Optional encoder freezing for fine-tuning
+- Optional encoder/decoder freezing for head-only training
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import torch
 from transformers import (
@@ -32,19 +32,15 @@ class WhisperParaphasiaConfig:
     freeze_decoder: bool = False
     # Classification head weight relative to ASR loss
     cls_alpha: float = 1.0
-    # Class weights for the 3-class classification head [correct, p, n]
-    cls_class_weights: list[float] | None = None
+    # Positive class weights for BCE loss: [pw_phonemic, pw_neologistic]
+    cls_pos_weights: list[float] | None = None
 
 
 def build_model(
     config: WhisperParaphasiaConfig | None = None,
     tokenizer: WhisperTokenizerFast | None = None,
 ) -> tuple[WhisperWithParaphasiaHead, WhisperTokenizerFast]:
-    """Build Whisper model with paraphasia classification head.
-
-    The decoder vocabulary is unmodified — no special tokens added.
-    Paraphasia detection is handled by a separate classification head
-    on the decoder hidden states.
+    """Build Whisper model with utterance-level paraphasia classification head.
 
     Args:
         config: Model configuration. Uses defaults if None.
@@ -90,8 +86,12 @@ def build_model(
     model = WhisperWithParaphasiaHead(
         whisper,
         alpha=config.cls_alpha,
-        cls_class_weights=config.cls_class_weights,
+        cls_pos_weights=config.cls_pos_weights,
     )
+
+    # If both encoder and decoder are frozen, only train the head
+    if config.freeze_encoder and config.freeze_decoder:
+        model.cls_only = True
 
     return model, tokenizer
 

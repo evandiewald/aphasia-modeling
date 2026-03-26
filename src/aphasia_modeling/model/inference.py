@@ -1,14 +1,14 @@
 """Inference module for trained Whisper paraphasia models.
 
-Loads a checkpoint, decodes audio files, and outputs single-seq format
-transcripts with inline paraphasia labels. The paraphasia labels come
-from a classification head on the decoder hidden states, not from the
-decoder vocabulary.
+Loads a checkpoint, decodes audio, and classifies utterances for paraphasia
+presence. The ASR transcript comes from Whisper's decoder. Paraphasia labels
+come from an utterance-level classification head on decoder hidden states.
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -20,15 +20,40 @@ from transformers import (
 
 from .classifier import (
     WhisperWithParaphasiaHead,
-    CLS_LABELS,
-    CLS_CORRECT,
-    CLS_PHONEMIC,
-    CLS_NEOLOGISTIC,
+    UTT_PHONEMIC,
+    UTT_NEOLOGISTIC,
 )
 
 
+@dataclass
+class PredictionResult:
+    """Result of paraphasia prediction for a single utterance."""
+    text: str           # Normalized ASR transcript (lowercase, no punct)
+    has_p: bool         # Utterance contains phonemic paraphasia
+    has_n: bool         # Utterance contains neologistic paraphasia
+    prob_p: float       # Probability of phonemic paraphasia
+    prob_n: float       # Probability of neologistic paraphasia
+
+    def to_single_seq(self) -> str:
+        """Format as single-seq string with tags for eval compatibility.
+
+        Inserts [p]/[n] after the first word if flagged.
+        """
+        words = self.text.split()
+        if not words:
+            return ""
+
+        result = [words[0]]
+        if self.has_p:
+            result.append("[p]")
+        if self.has_n:
+            result.append("[n]")
+        result.extend(words[1:])
+        return " ".join(result)
+
+
 class ParaphasiaPredictor:
-    """Run inference with a trained Whisper + classification head model."""
+    """Run inference with a trained Whisper + utterance classification model."""
 
     def __init__(
         self,
@@ -40,8 +65,7 @@ class ParaphasiaPredictor:
         Args:
             model_path: Path to saved checkpoint.
             device: Device to use.
-            threshold: Minimum probability to tag a word as paraphasic.
-                Higher = fewer tags (more precise), lower = more tags (more recall).
+            threshold: Minimum sigmoid probability to flag a paraphasia type.
         """
         model_path = str(model_path)
 
@@ -79,35 +103,17 @@ class ParaphasiaPredictor:
         self,
         audio: np.ndarray,
         sampling_rate: int = 16000,
-    ) -> str:
-        """Transcribe audio with paraphasia labels.
-
-        Returns single-seq format string, e.g. "the cat [p] sat on mat"
-        """
-        features = self.feature_extractor(
-            audio,
-            sampling_rate=sampling_rate,
-            return_tensors="pt",
-            padding="max_length",
-        )
-        input_features = features.input_features.to(
-            device=self.device, dtype=self.model.dtype
-        )
-
-        with torch.no_grad():
-            generated_ids = self.model.generate(
-                input_features, **self._gen_kwargs
-            )
-
-        cls_probs = self.model.classify(input_features, generated_ids)
-        return self._merge(generated_ids[0], cls_probs[0])
+    ) -> PredictionResult:
+        """Transcribe audio and classify for paraphasias."""
+        results = self.predict_batch([audio], sampling_rate=sampling_rate)
+        return results[0]
 
     def predict_batch(
         self,
         audios: list[np.ndarray],
         sampling_rate: int = 16000,
-    ) -> list[str]:
-        """Transcribe a batch of audio files."""
+    ) -> list[PredictionResult]:
+        """Transcribe a batch of audio and classify for paraphasias."""
         features = self.feature_extractor(
             audios,
             sampling_rate=sampling_rate,
@@ -123,73 +129,35 @@ class ParaphasiaPredictor:
                 input_features, **self._gen_kwargs
             )
 
-        cls_probs = self.model.classify(input_features, generated_ids)
+        # Classify utterances
+        cls_probs = self.model.classify(input_features, generated_ids)  # (batch, 2)
 
-        return [
-            self._merge(generated_ids[i], cls_probs[i])
-            for i in range(len(audios))
-        ]
+        results = []
+        for i in range(len(audios)):
+            # Decode and normalize
+            text = self.tokenizer.decode(
+                generated_ids[i], skip_special_tokens=True
+            )
+            text = text.lower()
+            text = re.sub(r"[^\w\s']", "", text)
+            text = re.sub(r"\s+", " ", text).strip()
 
-    def predict_file(self, audio_path: str | Path, **kwargs) -> str:
+            prob_p = cls_probs[i, UTT_PHONEMIC].item()
+            prob_n = cls_probs[i, UTT_NEOLOGISTIC].item()
+
+            results.append(PredictionResult(
+                text=text,
+                has_p=prob_p >= self.threshold,
+                has_n=prob_n >= self.threshold,
+                prob_p=prob_p,
+                prob_n=prob_n,
+            ))
+
+        return results
+
+    def predict_file(self, audio_path: str | Path, **kwargs) -> PredictionResult:
         """Transcribe an audio file."""
         import librosa
 
         audio, sr = librosa.load(str(audio_path), sr=16000, mono=True)
         return self.predict(audio, sampling_rate=sr, **kwargs)
-
-    def _merge(
-        self, token_ids: torch.Tensor, cls_probs: torch.Tensor
-    ) -> str:
-        """Merge decoded text with classification probabilities.
-
-        For each word, averages the paraphasia probability across its
-        subword tokens. Only tags the word if the probability exceeds
-        self.threshold.
-        """
-        text = self.tokenizer.decode(token_ids, skip_special_tokens=True)
-
-        # Normalize: lowercase, strip punctuation
-        text = text.lower()
-        text = re.sub(r"[^\w\s']", "", text)
-        text = re.sub(r"\s+", " ", text).strip()
-
-        words = text.split()
-        if not words:
-            return ""
-
-        # Get per-token probs, skipping prefix tokens
-        prefix_len = len(self.tokenizer.prefix_tokens)
-        probs = cls_probs[prefix_len:]  # (seq_len, 3)
-
-        # Map token positions back to words
-        result = []
-        token_pos = 0
-        for word in words:
-            word_tokens = self.tokenizer.encode(word, add_special_tokens=False)
-            n_tokens = len(word_tokens)
-
-            # Average probabilities across the word's subword tokens
-            word_probs = probs[token_pos: token_pos + n_tokens]
-            if len(word_probs) > 0:
-                avg_probs = word_probs.mean(dim=0)  # (3,)
-                # Check if any paraphasia class exceeds threshold
-                p_prob = avg_probs[CLS_PHONEMIC].item()
-                n_prob = avg_probs[CLS_NEOLOGISTIC].item()
-                para_prob = p_prob + n_prob
-
-                if para_prob >= self.threshold:
-                    # Pick the more likely paraphasia type
-                    word_cls = CLS_PHONEMIC if p_prob >= n_prob else CLS_NEOLOGISTIC
-                else:
-                    word_cls = CLS_CORRECT
-            else:
-                word_cls = CLS_CORRECT
-
-            result.append(word)
-            if word_cls != CLS_CORRECT:
-                tag = CLS_LABELS[word_cls]
-                result.append(f"[{tag}]")
-
-            token_pos += n_tokens
-
-        return " ".join(result)

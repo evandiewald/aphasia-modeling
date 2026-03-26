@@ -106,8 +106,8 @@ def parse_args() -> argparse.Namespace:
     # Paraphasia-specific
     p.add_argument("--cls_alpha", type=float, default=1.0,
                     help="Weight for classification loss vs ASR loss")
-    p.add_argument("--cls_weights", type=str, default=None,
-                    help="Class weights for classifier head as 'w_correct,w_p,w_n' (e.g., '1,10,20')")
+    p.add_argument("--cls_pos_weights", type=str, default=None,
+                    help="BCE positive class weights as 'pw_p,pw_n' (e.g., '6,19')")
     p.add_argument("--oversample", type=int, default=1,
                     help="Oversample paraphasia utterances N times (e.g., 4 = 4x)")
     p.add_argument("--freeze_encoder", action="store_true", default=False,
@@ -160,10 +160,10 @@ def train_fold(
     print(f"Dev:   {len(dev_utts)} utterances")
     print(f"Test:  {len(test_utts)} utterances")
 
-    # Parse classifier class weights
-    cls_class_weights = None
-    if args.cls_weights:
-        cls_class_weights = [float(w) for w in args.cls_weights.split(",")]
+    # Parse BCE positive class weights
+    cls_pos_weights = None
+    if args.cls_pos_weights:
+        cls_pos_weights = [float(w) for w in args.cls_pos_weights.split(",")]
 
     # Build tokenizer and model (no special tokens — stock Whisper vocab)
     config = WhisperParaphasiaConfig(
@@ -171,7 +171,7 @@ def train_fold(
         freeze_encoder=args.freeze_encoder,
         freeze_decoder=args.freeze_decoder,
         cls_alpha=args.cls_alpha,
-        cls_class_weights=cls_class_weights,
+        cls_pos_weights=cls_pos_weights,
     )
     model, tokenizer = build_model(config)
 
@@ -213,7 +213,7 @@ def train_fold(
                 "batch_size": args.batch_size,
                 "grad_accum": args.grad_accum,
                 "cls_alpha": args.cls_alpha,
-                "cls_weights": args.cls_weights,
+                "cls_pos_weights": args.cls_pos_weights,
                 "oversample": args.oversample,
                 "freeze_encoder": args.freeze_encoder,
                 "time_perturbation": args.time_perturbation,

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Evaluate a trained Whisper paraphasia model on a test set.
 
-Runs inference on all test utterances and computes the full CHAI metric suite.
+Runs inference on all test utterances and computes WER + utterance-level F1.
 
 Usage:
   python scripts/evaluate_model.py \
@@ -22,12 +22,13 @@ import librosa
 import numpy as np
 import torch
 from tqdm import tqdm
+from sklearn.metrics import f1_score, precision_score, recall_score
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from aphasia_modeling.data.dataset import AphasiaBankDataset
-from aphasia_modeling.data.preprocess import parse_single_seq, to_single_seq
-from aphasia_modeling.evaluation.metrics import compute_all_metrics
+from aphasia_modeling.data.preprocess import to_single_seq
+from aphasia_modeling.evaluation.metrics import compute_wer
 from aphasia_modeling.model.inference import ParaphasiaPredictor
 
 
@@ -46,7 +47,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--batch_size", type=int, default=8,
                     help="Batch size for inference")
     p.add_argument("--threshold", type=float, default=0.5,
-                    help="Paraphasia classification threshold (0-1). Higher = fewer tags, more precise.")
+                    help="Classification threshold (0-1). Higher = fewer tags.")
     p.add_argument("--quick", type=int, default=0,
                     help="Only run on N utterances (0 = all)")
     return p.parse_args()
@@ -75,27 +76,27 @@ def main():
     if predictor.device.type == "cuda":
         predictor.model = predictor.model.half()
 
-    # Build references and load audio in batches
-    refs = []
-    hyps = []
+    # Build ground truth
+    ref_texts = []  # Plain text (for WER)
+    ref_has_p = []  # Binary: does utterance have [p]?
+    ref_has_n = []  # Binary: does utterance have [n]?
+
+    for utt in test_utts:
+        ref_texts.append(" ".join(utt.words))
+        ref_has_p.append(1 if "p" in utt.labels else 0)
+        ref_has_n.append(1 if "n" in utt.labels else 0)
+
+    # Run inference in batches
+    hyp_texts = []
+    hyp_has_p = []
+    hyp_has_n = []
     results = []
     batch_size = args.batch_size
 
-    # Pre-build all references
-    for utt in test_utts:
-        ref_seq = to_single_seq(utt.words, utt.labels)
-        refs.append(ref_seq.split())
-        results.append({
-            "utterance_id": utt.utterance_id,
-            "reference": ref_seq,
-            "hypothesis": "",
-        })
-
-    # Batched inference
     for i in tqdm(range(0, len(test_utts), batch_size), desc="Inference"):
         batch_utts = test_utts[i : i + batch_size]
 
-        # Load audio for the batch (using segment timestamps)
+        # Load audio
         audios = []
         for utt in batch_utts:
             if utt.audio_path:
@@ -109,32 +110,57 @@ def main():
             else:
                 audios.append(np.zeros(16000, dtype=np.float32))
 
-        # Batch predict
-        hyp_texts = predictor.predict_batch(audios)
+        preds = predictor.predict_batch(audios)
 
-        for j, hyp_text in enumerate(hyp_texts):
+        for j, pred in enumerate(preds):
             idx = i + j
-            hyps.append(hyp_text.split() if hyp_text else [])
-            results[idx]["hypothesis"] = hyp_text
+            hyp_texts.append(pred.text)
+            hyp_has_p.append(1 if pred.has_p else 0)
+            hyp_has_n.append(1 if pred.has_n else 0)
 
-    # Compute metrics
+            ref_seq = to_single_seq(test_utts[idx].words, test_utts[idx].labels)
+            results.append({
+                "utterance_id": test_utts[idx].utterance_id,
+                "reference": ref_seq,
+                "hypothesis": pred.to_single_seq(),
+                "prob_p": round(pred.prob_p, 4),
+                "prob_n": round(pred.prob_n, 4),
+            })
+
+    # Compute WER
     print("\nComputing metrics...")
-    metrics = compute_all_metrics(refs, hyps)
-    print(f"\n{metrics}")
+    refs_for_wer = [r.split() for r in ref_texts]
+    hyps_for_wer = [h.split() for h in hyp_texts]
+    wer = compute_wer(refs_for_wer, hyps_for_wer)
+
+    # Compute utterance-level F1
+    f1_p = f1_score(ref_has_p, hyp_has_p, zero_division=0.0)
+    f1_n = f1_score(ref_has_n, hyp_has_n, zero_division=0.0)
+    prec_p = precision_score(ref_has_p, hyp_has_p, zero_division=0.0)
+    prec_n = precision_score(ref_has_n, hyp_has_n, zero_division=0.0)
+    rec_p = recall_score(ref_has_p, hyp_has_p, zero_division=0.0)
+    rec_n = recall_score(ref_has_n, hyp_has_n, zero_division=0.0)
+
+    print(f"\nWER:          {wer:.4f}")
+    print(f"F1-[p]:       {f1_p:.4f}  (P={prec_p:.4f}, R={rec_p:.4f})")
+    print(f"F1-[n]:       {f1_n:.4f}  (P={prec_n:.4f}, R={rec_n:.4f})")
+    print(f"Threshold:    {args.threshold}")
+    print(f"Utterances:   {len(test_utts)}")
+    print(f"  Ref has [p]: {sum(ref_has_p)}, Hyp has [p]: {sum(hyp_has_p)}")
+    print(f"  Ref has [n]: {sum(ref_has_n)}, Hyp has [n]: {sum(hyp_has_n)}")
 
     # Save outputs
     metrics_dict = {
         "test_speaker": args.test_speaker,
         "num_utterances": len(test_utts),
-        "wer": metrics.wer,
-        "awer": metrics.awer,
-        "awer_pd": metrics.awer_pd,
-        "td_binary": metrics.td_binary,
-        "td_p": metrics.td_p,
-        "td_n": metrics.td_n,
-        "td_all": metrics.td_all,
-        "f1_p": metrics.f1_p,
-        "f1_n": metrics.f1_n,
+        "threshold": args.threshold,
+        "wer": wer,
+        "f1_p": f1_p,
+        "f1_n": f1_n,
+        "precision_p": prec_p,
+        "precision_n": prec_n,
+        "recall_p": rec_p,
+        "recall_n": rec_n,
     }
     (output_dir / "metrics.json").write_text(json.dumps(metrics_dict, indent=2))
     (output_dir / "predictions.json").write_text(json.dumps(results, indent=2))
@@ -146,6 +172,7 @@ def main():
         print(f"  [{r['utterance_id']}]")
         print(f"    REF: {r['reference']}")
         print(f"    HYP: {r['hypothesis']}")
+        print(f"    P(p)={r['prob_p']:.3f}  P(n)={r['prob_n']:.3f}")
         print()
 
     print(f"Results saved to {output_dir}")

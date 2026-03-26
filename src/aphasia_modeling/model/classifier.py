@@ -1,14 +1,13 @@
-"""Paraphasia classification head on top of Whisper decoder hidden states.
+"""Utterance-level paraphasia classification head on Whisper decoder hidden states.
 
-Instead of relying on the decoder to emit [p]/[n] tokens from the full 51k+
-vocabulary, this module adds a small classification head that makes a 3-class
-decision (correct / [p] / [n]) at each word position using the decoder's
-hidden states. This reduces the problem from "pick 1 of 51k tokens" to
-"pick 1 of 3 classes".
+The decoder does pure ASR (unmodified Whisper vocab). This module adds a
+multilabel classification head that pools decoder hidden states and predicts
+whether the utterance contains phonemic and/or neologistic paraphasias.
 
-The decoder does pure ASR (no paraphasia tokens in vocab). The classification
-head is trained jointly via an auxiliary loss on the decoder hidden states.
-At inference time, the head's predictions are interleaved into the transcript.
+This is a 2-output binary (multilabel) problem:
+  - has_phonemic (0/1)
+  - has_neologistic (0/1)
+An utterance can have both, either, or neither.
 """
 
 from __future__ import annotations
@@ -19,22 +18,19 @@ import torch
 from torch import nn
 from transformers import WhisperForConditionalGeneration
 
-
-# Classification labels
-CLS_CORRECT = 0
-CLS_PHONEMIC = 1
-CLS_NEOLOGISTIC = 2
-CLS_LABELS = {CLS_CORRECT: "c", CLS_PHONEMIC: "p", CLS_NEOLOGISTIC: "n"}
+# Indices into the 2-output classification vector
+UTT_PHONEMIC = 0
+UTT_NEOLOGISTIC = 1
 
 
-class ParaphasiaClassifierHead(nn.Module):
-    """Small classification head for paraphasia detection.
+class UtteranceClassifierHead(nn.Module):
+    """Multilabel classification head for utterance-level paraphasia detection.
 
-    Takes decoder hidden states and predicts {correct=0, [p]=1, [n]=2}
-    at each token position.
+    Takes a pooled decoder hidden state and predicts two independent binary
+    labels: has_phonemic and has_neologistic.
     """
 
-    NUM_CLASSES = 3
+    NUM_LABELS = 2  # [has_p, has_n]
 
     def __init__(self, hidden_size: int, dropout: float = 0.1):
         super().__init__()
@@ -42,58 +38,59 @@ class ParaphasiaClassifierHead(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(hidden_size, hidden_size // 4),
             nn.GELU(),
-            nn.Linear(hidden_size // 4, self.NUM_CLASSES),
+            nn.Linear(hidden_size // 4, self.NUM_LABELS),
         )
 
-    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        """Classify each position.
+    def forward(self, pooled_hidden: torch.Tensor) -> torch.Tensor:
+        """Classify utterance.
 
         Args:
-            hidden_states: (batch, seq_len, hidden_size) from decoder.
+            pooled_hidden: (batch, hidden_size) — mean-pooled decoder states.
 
         Returns:
-            Logits of shape (batch, seq_len, 3).
+            Logits of shape (batch, 2) for [has_p, has_n].
         """
-        return self.head(hidden_states)
+        return self.head(pooled_hidden)
 
 
 class WhisperWithParaphasiaHead(nn.Module):
-    """Whisper model with an auxiliary paraphasia classification head.
+    """Whisper model with utterance-level paraphasia classification head.
 
-    The decoder does pure ASR — no paraphasia tokens in the vocabulary.
-    The classification head trains on decoder hidden states to detect
-    paraphasias as a 3-class problem at each token position.
+    The decoder does pure ASR. The classification head pools decoder hidden
+    states and predicts whether the utterance contains [p] and/or [n].
 
-    Training loss: asr_loss + alpha * classification_loss
+    Training loss: asr_loss + alpha * bce_classification_loss
+    (or cls_only mode: just bce_classification_loss)
     """
 
     def __init__(
         self,
         whisper_model: WhisperForConditionalGeneration,
         alpha: float = 1.0,
-        cls_class_weights: list[float] | None = None,
+        cls_pos_weights: list[float] | None = None,
     ):
         """
         Args:
             whisper_model: The base Whisper model (unmodified vocab).
             alpha: Weight for classification loss relative to ASR loss.
-            cls_class_weights: Optional [w_correct, w_p, w_n] for the
-                classification CE loss.
+            cls_pos_weights: Positive class weights for BCEWithLogitsLoss,
+                as [pw_phonemic, pw_neologistic]. Upweights positive examples.
         """
         super().__init__()
         self.whisper = whisper_model
         self.alpha = alpha
+        self.cls_only = False  # Set True to skip ASR loss (head-only training)
 
         hidden_size = whisper_model.config.d_model
-        self.classifier = ParaphasiaClassifierHead(hidden_size)
+        self.classifier = UtteranceClassifierHead(hidden_size)
 
-        if cls_class_weights:
+        if cls_pos_weights:
             self.register_buffer(
-                "_cls_weights",
-                torch.tensor(cls_class_weights, dtype=torch.float32),
+                "_pos_weights",
+                torch.tensor(cls_pos_weights, dtype=torch.float32),
             )
         else:
-            self._cls_weights = None
+            self._pos_weights = None
 
     def forward(
         self,
@@ -102,15 +99,14 @@ class WhisperWithParaphasiaHead(nn.Module):
         cls_labels=None,
         **kwargs,
     ):
-        """Forward pass with both ASR and classification losses.
+        """Forward pass with ASR and/or classification loss.
 
         Args:
             input_features: Mel spectrogram features.
-            labels: Token IDs for ASR loss (standard Whisper labels).
-            cls_labels: Per-token classification targets (0=correct, 1=[p],
-                2=[n], -100=ignore). Same shape as labels.
+            labels: Token IDs for ASR loss.
+            cls_labels: Utterance-level binary labels, shape (batch, 2),
+                values 0.0 or 1.0 for [has_p, has_n].
         """
-        # Always request hidden states; remove from kwargs to avoid duplicates
         kwargs.pop("output_hidden_states", None)
         outputs = self.whisper(
             input_features=input_features,
@@ -120,29 +116,27 @@ class WhisperWithParaphasiaHead(nn.Module):
         )
 
         if cls_labels is not None:
-            decoder_hidden = outputs.decoder_hidden_states[-1]
-            cls_logits = self.classifier(decoder_hidden)
+            # Mean-pool decoder hidden states over non-padding positions
+            decoder_hidden = outputs.decoder_hidden_states[-1]  # (batch, seq, hidden)
+            mask = (labels != -100).float()  # (batch, seq)
+            mask_sum = mask.sum(dim=1, keepdim=True).clamp(min=1)  # avoid div by 0
+            pooled = (decoder_hidden * mask.unsqueeze(-1)).sum(dim=1) / mask_sum  # (batch, hidden)
 
-            if self._cls_weights is not None:
-                weights = self._cls_weights.to(cls_logits.device)
-                cls_loss_fct = nn.CrossEntropyLoss(
-                    weight=weights, ignore_index=-100
-                )
-            else:
-                cls_loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
+            cls_logits = self.classifier(pooled)  # (batch, 2)
 
-            cls_loss = cls_loss_fct(
-                cls_logits.view(-1, ParaphasiaClassifierHead.NUM_CLASSES),
-                cls_labels.view(-1),
+            loss_fct = nn.BCEWithLogitsLoss(
+                pos_weight=self._pos_weights.to(cls_logits.device) if self._pos_weights is not None else None,
             )
+            cls_loss = loss_fct(cls_logits, cls_labels.float())
 
-            outputs.loss = outputs.loss + self.alpha * cls_loss
-            # Store for logging (can't add attrs to Seq2SeqLMOutput)
+            if self.cls_only:
+                outputs.loss = cls_loss
+            else:
+                outputs.loss = outputs.loss + self.alpha * cls_loss
+
             self._last_cls_loss = cls_loss.item()
-            self._last_asr_loss = (outputs.loss - self.alpha * cls_loss).item()
         else:
             self._last_cls_loss = None
-            self._last_asr_loss = None
 
         return outputs
 
@@ -158,7 +152,7 @@ class WhisperWithParaphasiaHead(nn.Module):
             decoder_input_ids: Token IDs from generate() output.
 
         Returns:
-            Softmax probabilities per position (batch, seq_len, 3).
+            Sigmoid probabilities, shape (batch, 2) for [has_p, has_n].
         """
         with torch.no_grad():
             outputs = self.whisper(
@@ -167,8 +161,12 @@ class WhisperWithParaphasiaHead(nn.Module):
                 output_hidden_states=True,
             )
             decoder_hidden = outputs.decoder_hidden_states[-1]
-            cls_logits = self.classifier(decoder_hidden)
-            return torch.softmax(cls_logits, dim=-1)
+
+            # Pool over all positions (no label masking at inference)
+            pooled = decoder_hidden.mean(dim=1)
+
+            cls_logits = self.classifier(pooled)
+            return torch.sigmoid(cls_logits)
 
     def generate(self, *args, **kwargs):
         """Delegate to Whisper's generate for ASR inference."""
@@ -181,10 +179,7 @@ class WhisperWithParaphasiaHead(nn.Module):
         path = Path(path)
         path.mkdir(parents=True, exist_ok=True)
 
-        # Save Whisper in standard HF format (handles shared tensors)
         self.whisper.save_pretrained(path)
-
-        # Save classifier head separately
         save_file(self.classifier.state_dict(), path / "classifier_head.safetensors")
 
     @classmethod
@@ -192,7 +187,7 @@ class WhisperWithParaphasiaHead(nn.Module):
         cls,
         path: str | Path,
         alpha: float = 1.0,
-        cls_class_weights: list[float] | None = None,
+        cls_pos_weights: list[float] | None = None,
         device: str | None = None,
     ) -> WhisperWithParaphasiaHead:
         """Load Whisper and classifier head from a checkpoint."""
@@ -200,7 +195,7 @@ class WhisperWithParaphasiaHead(nn.Module):
 
         path = Path(path)
         whisper = WhisperForConditionalGeneration.from_pretrained(path)
-        model = cls(whisper, alpha=alpha, cls_class_weights=cls_class_weights)
+        model = cls(whisper, alpha=alpha, cls_pos_weights=cls_pos_weights)
 
         head_path = path / "classifier_head.safetensors"
         if head_path.exists():

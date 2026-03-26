@@ -3,7 +3,7 @@
 Handles:
 - Audio feature extraction via WhisperFeatureExtractor
 - Target sequence tokenization (plain ASR text — no paraphasia tokens)
-- Classification labels aligned to token positions (for paraphasia head)
+- Utterance-level classification labels (has_p, has_n)
 - Padding and label masking (-100 for pad tokens in labels)
 - SpecAugment time perturbation (speed changes per CHAI rates)
 """
@@ -12,24 +12,19 @@ from __future__ import annotations
 
 import random
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
-
-warnings.filterwarnings("ignore", message=".*audioread.*")
-warnings.filterwarnings("ignore", message=".*PySoundFile failed.*")
 
 import librosa
 import numpy as np
 import torch
 from transformers import WhisperFeatureExtractor, WhisperTokenizerFast
 
-from .classifier import CLS_CORRECT, CLS_PHONEMIC, CLS_NEOLOGISTIC
+warnings.filterwarnings("ignore", message=".*audioread.*")
+warnings.filterwarnings("ignore", message=".*PySoundFile failed.*")
 
 # CHAI SpecAugment time perturbation rates
 SPEC_AUGMENT_RATES = [0.8, 0.9, 0.95, 1.0, 1.05, 1.1, 1.2]
-
-# Map from string labels to classification indices
-_LABEL_TO_CLS = {"c": CLS_CORRECT, "p": CLS_PHONEMIC, "n": CLS_NEOLOGISTIC}
 
 
 @dataclass
@@ -45,7 +40,7 @@ class ParaphasiaDataCollator:
     Returns dict with:
     - "input_features": mel spectrogram tensor
     - "labels": token IDs for ASR loss
-    - "cls_labels": per-token classification targets for the paraphasia head
+    - "cls_labels": utterance-level binary labels (batch, 2) for [has_p, has_n]
     """
 
     feature_extractor: WhisperFeatureExtractor
@@ -68,7 +63,7 @@ class ParaphasiaDataCollator:
                 dtype=torch.float32,
             )
 
-        # --- ASR labels (plain text, no paraphasia tokens) ---
+        # --- ASR labels ---
         labels = self._tokenize_targets(features)
 
         result = {
@@ -76,10 +71,9 @@ class ParaphasiaDataCollator:
             "labels": labels,
         }
 
-        # --- Classification labels (if using classifier head) ---
+        # --- Utterance-level classification labels ---
         if self.use_classifier:
-            cls_labels = self._build_cls_labels(features, labels)
-            result["cls_labels"] = cls_labels
+            result["cls_labels"] = self._build_utterance_cls_labels(features)
 
         return result
 
@@ -181,50 +175,17 @@ class ParaphasiaDataCollator:
 
         return labels
 
-    def _build_cls_labels(
-        self,
-        features: list[dict[str, Any]],
-        asr_labels: torch.Tensor,
+    def _build_utterance_cls_labels(
+        self, features: list[dict[str, Any]]
     ) -> torch.Tensor:
-        """Build per-token classification labels aligned to ASR token positions.
+        """Build utterance-level binary classification labels.
 
-        Each word in the text has a paraphasia label (c/p/n). We need to map
-        these word-level labels to subword token positions, since BPE may split
-        a word into multiple tokens.
-
-        Strategy: tokenize each word individually to find how many tokens it
-        produces, then assign that word's paraphasia label to all its tokens.
-        Special tokens (prefix, EOS, padding) get -100.
+        Returns (batch, 2) float tensor: [has_phonemic, has_neologistic].
         """
-        batch_size, seq_len = asr_labels.shape
-        cls_labels = torch.full((batch_size, seq_len), -100, dtype=torch.long)
-
-        for i, f in enumerate(features):
+        batch_labels = []
+        for f in features:
             word_labels = f.get("labels", "").split()
-            text = f.get("text", "")
-            words = text.split()
-
-            if not words or len(words) != len(word_labels):
-                continue
-
-            # Find how many prefix tokens the tokenizer adds
-            # Whisper prefix: <|startoftranscript|> <|en|> <|transcribe|> <|notimestamps|>
-            prefix_len = len(self.tokenizer.prefix_tokens)
-
-            # Tokenize each word to get its token count
-            token_pos = prefix_len  # start after prefix
-            for word, label in zip(words, word_labels):
-                word_tokens = self.tokenizer.encode(
-                    word, add_special_tokens=False
-                )
-                n_tokens = len(word_tokens)
-                cls_id = _LABEL_TO_CLS.get(label, CLS_CORRECT)
-
-                for t in range(n_tokens):
-                    pos = token_pos + t
-                    if pos < seq_len:
-                        cls_labels[i, pos] = cls_id
-
-                token_pos += n_tokens
-
-        return cls_labels
+            has_p = 1.0 if "p" in word_labels else 0.0
+            has_n = 1.0 if "n" in word_labels else 0.0
+            batch_labels.append([has_p, has_n])
+        return torch.tensor(batch_labels, dtype=torch.float32)
