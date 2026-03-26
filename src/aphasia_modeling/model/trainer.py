@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from transformers import Seq2SeqTrainer
+
+from .classifier import WhisperWithParaphasiaHead
 
 
 class ParaphasiaTrainer(Seq2SeqTrainer):
@@ -11,11 +15,11 @@ class ParaphasiaTrainer(Seq2SeqTrainer):
     The WhisperWithParaphasiaHead model handles the combined loss
     (ASR + classification) internally. This trainer just ensures
     cls_labels from the collator reach the model's forward method.
+
+    Also overrides save_model to handle shared tensors correctly.
     """
 
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
-        # The model's forward() accepts cls_labels and computes
-        # combined loss internally, so we just call it directly.
         labels = inputs["labels"]
         cls_labels = inputs.get("cls_labels")
 
@@ -26,3 +30,17 @@ class ParaphasiaTrainer(Seq2SeqTrainer):
         )
 
         return (outputs.loss, outputs) if return_outputs else outputs.loss
+
+    def _save(self, output_dir=None, state_dict=None):
+        """Override default save to handle shared Whisper tensors."""
+        output_dir = output_dir or self.args.output_dir
+        model = self.model
+
+        if isinstance(model, WhisperWithParaphasiaHead):
+            model.save_pretrained(output_dir)
+        else:
+            super()._save(output_dir, state_dict=state_dict)
+
+        # Save tokenizer/processor if available
+        if self.processing_class is not None:
+            self.processing_class.save_pretrained(output_dir)
