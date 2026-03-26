@@ -6,16 +6,25 @@ decision (correct / [p] / [n]) at each word position using the decoder's
 hidden states. This reduces the problem from "pick 1 of 51k tokens" to
 "pick 1 of 3 classes".
 
-Can be used in two modes:
-1. Joint training: train alongside the seq2seq loss (ASR + classification)
-2. Post-hoc: freeze Whisper, train only the classification head on decoder states
+The decoder does pure ASR (no paraphasia tokens in vocab). The classification
+head is trained jointly via an auxiliary loss on the decoder hidden states.
+At inference time, the head's predictions are interleaved into the transcript.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import torch
 from torch import nn
 from transformers import WhisperForConditionalGeneration
+
+
+# Classification labels
+CLS_CORRECT = 0
+CLS_PHONEMIC = 1
+CLS_NEOLOGISTIC = 2
+CLS_LABELS = {CLS_CORRECT: "c", CLS_PHONEMIC: "p", CLS_NEOLOGISTIC: "n"}
 
 
 class ParaphasiaClassifierHead(nn.Module):
@@ -25,8 +34,7 @@ class ParaphasiaClassifierHead(nn.Module):
     at each token position.
     """
 
-    NUM_CLASSES = 3  # correct, [p], [n]
-    LABEL_MAP = {0: "c", 1: "p", 2: "n"}
+    NUM_CLASSES = 3
 
     def __init__(self, hidden_size: int, dropout: float = 0.1):
         super().__init__()
@@ -52,52 +60,56 @@ class ParaphasiaClassifierHead(nn.Module):
 class WhisperWithParaphasiaHead(nn.Module):
     """Whisper model with an auxiliary paraphasia classification head.
 
-    During training, computes both:
-    1. Standard seq2seq cross-entropy loss (for ASR)
-    2. Classification loss on decoder hidden states (for paraphasia detection)
+    The decoder does pure ASR — no paraphasia tokens in the vocabulary.
+    The classification head trains on decoder hidden states to detect
+    paraphasias as a 3-class problem at each token position.
 
-    The final loss is: seq2seq_loss + alpha * classification_loss
+    Training loss: asr_loss + alpha * classification_loss
     """
 
     def __init__(
         self,
         whisper_model: WhisperForConditionalGeneration,
-        paraphasia_token_ids: dict[str, int],
         alpha: float = 1.0,
-        class_weights: list[float] | None = None,
+        cls_class_weights: list[float] | None = None,
     ):
         """
         Args:
-            whisper_model: The base Whisper model.
-            paraphasia_token_ids: {"[p]": id, "[n]": id} mapping.
-            alpha: Weight for classification loss relative to seq2seq loss.
-            class_weights: Optional [w_correct, w_p, w_n] for CE loss.
+            whisper_model: The base Whisper model (unmodified vocab).
+            alpha: Weight for classification loss relative to ASR loss.
+            cls_class_weights: Optional [w_correct, w_p, w_n] for the
+                classification CE loss.
         """
         super().__init__()
         self.whisper = whisper_model
-        self.paraphasia_token_ids = paraphasia_token_ids
         self.alpha = alpha
 
         hidden_size = whisper_model.config.d_model
         self.classifier = ParaphasiaClassifierHead(hidden_size)
 
-        # Build class weights for the 3-class problem
-        if class_weights:
-            self._cls_weights = torch.tensor(class_weights, dtype=torch.float32)
+        if cls_class_weights:
+            self.register_buffer(
+                "_cls_weights",
+                torch.tensor(cls_class_weights, dtype=torch.float32),
+            )
         else:
             self._cls_weights = None
 
-        # Map from token IDs to class indices
-        self._token_to_class = {}
-        for token, tid in paraphasia_token_ids.items():
-            if token == "[p]":
-                self._token_to_class[tid] = 1
-            elif token == "[n]":
-                self._token_to_class[tid] = 2
+    def forward(
+        self,
+        input_features,
+        labels=None,
+        cls_labels=None,
+        **kwargs,
+    ):
+        """Forward pass with both ASR and classification losses.
 
-    def forward(self, input_features, labels=None, **kwargs):
-        """Forward pass with both seq2seq and classification losses."""
-        # Run Whisper forward — get decoder hidden states
+        Args:
+            input_features: Mel spectrogram features.
+            labels: Token IDs for ASR loss (standard Whisper labels).
+            cls_labels: Per-token classification targets (0=correct, 1=[p],
+                2=[n], -100=ignore). Same shape as labels.
+        """
         outputs = self.whisper(
             input_features=input_features,
             labels=labels,
@@ -105,71 +117,85 @@ class WhisperWithParaphasiaHead(nn.Module):
             **kwargs,
         )
 
-        if labels is None:
-            return outputs
+        if cls_labels is not None:
+            decoder_hidden = outputs.decoder_hidden_states[-1]
+            cls_logits = self.classifier(decoder_hidden)
 
-        # Get last decoder hidden state
-        decoder_hidden = outputs.decoder_hidden_states[-1]
+            if self._cls_weights is not None:
+                weights = self._cls_weights.to(cls_logits.device)
+                cls_loss_fct = nn.CrossEntropyLoss(
+                    weight=weights, ignore_index=-100
+                )
+            else:
+                cls_loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
 
-        # Build classification targets from labels
-        cls_targets = self._build_cls_targets(labels)
+            cls_loss = cls_loss_fct(
+                cls_logits.view(-1, ParaphasiaClassifierHead.NUM_CLASSES),
+                cls_labels.view(-1),
+            )
 
-        # Classify
-        cls_logits = self.classifier(decoder_hidden)
-
-        # Classification loss (only on non-ignored positions)
-        if self._cls_weights is not None:
-            weights = self._cls_weights.to(cls_logits.device)
-            cls_loss_fct = nn.CrossEntropyLoss(weight=weights, ignore_index=-100)
-        else:
-            cls_loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
-
-        cls_loss = cls_loss_fct(
-            cls_logits.view(-1, ParaphasiaClassifierHead.NUM_CLASSES),
-            cls_targets.view(-1),
-        )
-
-        # Combined loss
-        total_loss = outputs.loss + self.alpha * cls_loss
-
-        # Attach for logging
-        outputs.loss = total_loss
-        outputs.cls_loss = cls_loss
+            outputs.loss = outputs.loss + self.alpha * cls_loss
 
         return outputs
 
-    def _build_cls_targets(self, labels: torch.Tensor) -> torch.Tensor:
-        """Convert token-level labels to 3-class targets.
+    def classify(
+        self,
+        input_features: torch.Tensor,
+        decoder_input_ids: torch.Tensor,
+    ) -> torch.Tensor:
+        """Run classification only (for inference).
 
-        For each position in the label sequence:
-        - If the token is [p] → class 1
-        - If the token is [n] → class 2
-        - If the token is -100 (padding) → -100 (ignore)
-        - Otherwise → class 0 (correct)
+        Args:
+            input_features: Mel features (batch, n_mels, frames).
+            decoder_input_ids: Token IDs from generate() output.
 
-        But we actually want to label the WORD position, not the tag position.
-        The tag [p] follows the word it labels. So we look ahead: if position
-        i+1 is a paraphasia token, then position i gets that class.
+        Returns:
+            Predicted class per position (batch, seq_len) — 0/1/2.
         """
-        batch_size, seq_len = labels.shape
-        targets = torch.zeros_like(labels)  # default: correct (class 0)
-
-        for i in range(batch_size):
-            for j in range(seq_len):
-                tok = labels[i, j].item()
-                if tok == -100:
-                    targets[i, j] = -100
-                elif tok in self._token_to_class:
-                    # This position IS a paraphasia tag — mark preceding word
-                    targets[i, j] = -100  # ignore the tag position itself
-                    if j > 0 and targets[i, j - 1] != -100:
-                        targets[i, j - 1] = self._token_to_class[tok]
-
-        return targets
+        with torch.no_grad():
+            outputs = self.whisper(
+                input_features=input_features,
+                decoder_input_ids=decoder_input_ids,
+                output_hidden_states=True,
+            )
+            decoder_hidden = outputs.decoder_hidden_states[-1]
+            cls_logits = self.classifier(decoder_hidden)
+            return cls_logits.argmax(dim=-1)
 
     def generate(self, *args, **kwargs):
-        """Delegate to Whisper's generate for inference."""
+        """Delegate to Whisper's generate for ASR inference."""
         return self.whisper.generate(*args, **kwargs)
+
+    def save_pretrained(self, path: str | Path) -> None:
+        """Save both Whisper and classifier head."""
+        path = Path(path)
+        self.whisper.save_pretrained(path)
+        torch.save(
+            self.classifier.state_dict(),
+            path / "classifier_head.pt",
+        )
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        path: str | Path,
+        alpha: float = 1.0,
+        cls_class_weights: list[float] | None = None,
+        device: str | None = None,
+    ) -> WhisperWithParaphasiaHead:
+        """Load both Whisper and classifier head from a checkpoint."""
+        path = Path(path)
+        whisper = WhisperForConditionalGeneration.from_pretrained(path)
+        model = cls(whisper, alpha=alpha, cls_class_weights=cls_class_weights)
+
+        head_path = path / "classifier_head.pt"
+        if head_path.exists():
+            state = torch.load(head_path, map_location=device or "cpu")
+            model.classifier.load_state_dict(state)
+
+        return model
+
+    # --- Properties needed by HF Trainer ---
 
     @property
     def config(self):
@@ -184,5 +210,5 @@ class WhisperWithParaphasiaHead(nn.Module):
         self.whisper.generation_config = value
 
     @property
-    def device(self):
-        return next(self.parameters()).device
+    def dtype(self):
+        return next(self.parameters()).dtype

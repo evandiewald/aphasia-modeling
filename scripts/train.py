@@ -60,12 +60,9 @@ from transformers import (
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from aphasia_modeling.data.dataset import AphasiaBankDataset
-from aphasia_modeling.model.tokenizer import build_tokenizer, get_paraphasia_token_ids
 from aphasia_modeling.model.whisper import (
     build_model,
     WhisperParaphasiaConfig,
-    get_class_weight_tensor,
-    freeze_encoder,
 )
 from aphasia_modeling.model.collator import ParaphasiaDataCollator
 from aphasia_modeling.model.trainer import ParaphasiaTrainer
@@ -107,12 +104,12 @@ def parse_args() -> argparse.Namespace:
                     help="Use BF16 mixed precision (A100+)")
 
     # Paraphasia-specific
-    p.add_argument("--class_weights", action="store_true", default=False,
-                    help="Apply class weighting ([p]=10, [n]=20)")
+    p.add_argument("--cls_alpha", type=float, default=1.0,
+                    help="Weight for classification loss vs ASR loss")
+    p.add_argument("--cls_weights", type=str, default=None,
+                    help="Class weights for classifier head as 'w_correct,w_p,w_n' (e.g., '1,10,20')")
     p.add_argument("--oversample", type=int, default=1,
                     help="Oversample paraphasia utterances N times (e.g., 4 = 4x)")
-    p.add_argument("--logit_bias", type=float, default=0.0,
-                    help="Additive bias on paraphasia token logits (e.g., 5.0)")
     p.add_argument("--freeze_encoder", action="store_true", default=False,
                     help="Freeze encoder during training")
     p.add_argument("--time_perturbation", action="store_true", default=False,
@@ -161,39 +158,34 @@ def train_fold(
     print(f"Dev:   {len(dev_utts)} utterances")
     print(f"Test:  {len(test_utts)} utterances")
 
-    # Build tokenizer and model
-    tokenizer = build_tokenizer(model_name=args.model_name)
+    # Parse classifier class weights
+    cls_class_weights = None
+    if args.cls_weights:
+        cls_class_weights = [float(w) for w in args.cls_weights.split(",")]
 
+    # Build tokenizer and model (no special tokens — stock Whisper vocab)
     config = WhisperParaphasiaConfig(
         model_name=args.model_name,
         freeze_encoder=args.freeze_encoder,
+        cls_alpha=args.cls_alpha,
+        cls_class_weights=cls_class_weights,
     )
-    model, tokenizer = build_model(config, tokenizer)
+    model, tokenizer = build_model(config)
 
     # Feature extractor
     feature_extractor = WhisperFeatureExtractor.from_pretrained(args.model_name)
 
-    # Data collator
+    # Data collator (use_classifier=True to produce cls_labels)
     collator = ParaphasiaDataCollator(
         feature_extractor=feature_extractor,
         tokenizer=tokenizer,
         apply_time_perturbation=args.time_perturbation,
+        use_classifier=True,
     )
 
     # Convert to HF datasets (oversample paraphasia utterances in train only)
     train_ds = dataset.to_hf_dataset(train_utts, oversample_paraphasia=args.oversample)
     dev_ds = dataset.to_hf_dataset(dev_utts)
-
-    # Class weights
-    class_weights = None
-    if args.class_weights:
-        class_weights = get_class_weight_tensor(tokenizer)
-
-    # Logit bias for paraphasia tokens
-    logit_bias = None
-    if args.logit_bias > 0:
-        para_ids = get_paraphasia_token_ids(tokenizer)
-        logit_bias = {tid: args.logit_bias for tid in para_ids.values()}
 
     # Wandb setup
     report_to = "none"
@@ -217,9 +209,9 @@ def train_fold(
                 "lr": args.lr,
                 "batch_size": args.batch_size,
                 "grad_accum": args.grad_accum,
-                "class_weights": args.class_weights,
+                "cls_alpha": args.cls_alpha,
+                "cls_weights": args.cls_weights,
                 "oversample": args.oversample,
-                "logit_bias": args.logit_bias,
                 "freeze_encoder": args.freeze_encoder,
                 "time_perturbation": args.time_perturbation,
             },
@@ -264,8 +256,6 @@ def train_fold(
 
     # Trainer
     trainer = ParaphasiaTrainer(
-        class_weights=class_weights,
-        paraphasia_logit_bias=logit_bias,
         model=model,
         args=training_args,
         train_dataset=train_ds,
@@ -278,8 +268,8 @@ def train_fold(
     # Train
     train_result = trainer.train()
 
-    # Save
-    trainer.save_model(output_dir)
+    # Save (model.save_pretrained saves both Whisper + classifier head)
+    model.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)
     feature_extractor.save_pretrained(output_dir)
 

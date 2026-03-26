@@ -1,4 +1,4 @@
-"""Tests for model components: tokenizer, model setup, collator, inference.
+"""Tests for model components: tokenizer, model setup, collator, classifier.
 
 All tests use openai/whisper-tiny to minimize download size and run on CPU.
 """
@@ -7,19 +7,21 @@ import numpy as np
 import pytest
 import torch
 
-from aphasia_modeling.model.tokenizer import (
-    PARAPHASIA_TOKENS,
-    build_tokenizer,
-    get_paraphasia_token_ids,
-)
+from aphasia_modeling.model.tokenizer import build_tokenizer
 from aphasia_modeling.model.whisper import (
     WhisperParaphasiaConfig,
     build_model,
     freeze_encoder,
-    get_class_weight_tensor,
     unfreeze_encoder,
 )
 from aphasia_modeling.model.collator import ParaphasiaDataCollator, SPEC_AUGMENT_RATES
+from aphasia_modeling.model.classifier import (
+    ParaphasiaClassifierHead,
+    WhisperWithParaphasiaHead,
+    CLS_CORRECT,
+    CLS_PHONEMIC,
+    CLS_NEOLOGISTIC,
+)
 
 # Use whisper-tiny for fast tests
 MODEL_NAME = "openai/whisper-tiny"
@@ -40,40 +42,15 @@ def model_and_tokenizer():
 
 
 class TestTokenizer:
-    def test_paraphasia_tokens_added(self, tokenizer):
-        for token in PARAPHASIA_TOKENS:
-            token_id = tokenizer.convert_tokens_to_ids(token)
-            assert token_id != tokenizer.unk_token_id, f"{token} resolved to UNK"
+    def test_stock_whisper_tokenizer(self, tokenizer):
+        """Tokenizer should be unmodified stock Whisper — no custom tokens added."""
+        # Whisper-tiny has 51865 tokens total (base vocab + language/task tokens)
+        assert len(tokenizer) == 51865
 
-    def test_paraphasia_tokens_are_single_tokens(self, tokenizer):
-        """Each paraphasia token should encode as exactly one token."""
-        for token in PARAPHASIA_TOKENS:
-            encoded = tokenizer.encode(token, add_special_tokens=False)
-            # May include preceding space token, so check the paraphasia token is in there
-            token_id = tokenizer.convert_tokens_to_ids(token)
-            assert token_id in encoded, (
-                f"{token} (id={token_id}) not found in encoded output: {encoded}"
-            )
-
-    def test_get_paraphasia_token_ids(self, tokenizer):
-        ids = get_paraphasia_token_ids(tokenizer)
-        assert set(ids.keys()) == {"[p]", "[n]"}
-        # All IDs should be unique
-        assert len(set(ids.values())) == 2
-
-    def test_token_ids_are_beyond_original_vocab(self, tokenizer):
-        """Paraphasia tokens should have IDs at the end of the vocab."""
-        ids = get_paraphasia_token_ids(tokenizer)
-        # whisper-tiny has vocab_size ~51865
-        for token, token_id in ids.items():
-            assert token_id >= 51864, f"{token} has unexpectedly low ID: {token_id}"
-
-    def test_decode_preserves_paraphasia_tokens(self, tokenizer):
-        text = "the cat [p] sat on mat [n]"
-        encoded = tokenizer.encode(text, add_special_tokens=False)
-        decoded = tokenizer.decode(encoded, skip_special_tokens=False)
-        assert "[p]" in decoded
-        assert "[n]" in decoded
+    def test_encodes_text(self, tokenizer):
+        encoded = tokenizer("the cat sat", return_tensors="pt")
+        assert encoded.input_ids.shape[0] == 1
+        assert encoded.input_ids.shape[1] > 0
 
 
 # ---- Model -------------------------------------------------------------------
@@ -83,51 +60,61 @@ class TestModel:
     def test_model_loads(self, model_and_tokenizer):
         model, tokenizer = model_and_tokenizer
         assert model is not None
-        assert tokenizer is not None
+        assert isinstance(model, WhisperWithParaphasiaHead)
 
-    def test_embeddings_resized(self, model_and_tokenizer):
-        model, tokenizer = model_and_tokenizer
-        vocab_size = model.model.decoder.embed_tokens.weight.shape[0]
-        assert vocab_size == len(tokenizer)
+    def test_has_classifier_head(self, model_and_tokenizer):
+        model, _ = model_and_tokenizer
+        assert hasattr(model, "classifier")
+        assert isinstance(model.classifier, ParaphasiaClassifierHead)
 
-    def test_new_embeddings_not_zero(self, model_and_tokenizer):
-        model, tokenizer = model_and_tokenizer
-        ids = get_paraphasia_token_ids(tokenizer)
-        for token, token_id in ids.items():
-            embedding = model.model.decoder.embed_tokens.weight[token_id]
-            assert embedding.abs().sum() > 0, f"{token} embedding is all zeros"
+    def test_classifier_output_shape(self, model_and_tokenizer):
+        model, _ = model_and_tokenizer
+        hidden_size = model.whisper.config.d_model
+        batch = torch.randn(2, 10, hidden_size)
+        logits = model.classifier(batch)
+        assert logits.shape == (2, 10, 3)
 
     def test_freeze_unfreeze_encoder(self, model_and_tokenizer):
         model, _ = model_and_tokenizer
 
-        freeze_encoder(model)
-        for param in model.model.encoder.parameters():
+        freeze_encoder(model.whisper)
+        for param in model.whisper.model.encoder.parameters():
             assert not param.requires_grad
 
-        unfreeze_encoder(model)
-        for param in model.model.encoder.parameters():
+        unfreeze_encoder(model.whisper)
+        for param in model.whisper.model.encoder.parameters():
             assert param.requires_grad
 
-    def test_class_weight_tensor(self, model_and_tokenizer):
-        _, tokenizer = model_and_tokenizer
-        weights = get_class_weight_tensor(tokenizer)
-        assert weights.shape == (len(tokenizer),)
-
-        ids = get_paraphasia_token_ids(tokenizer)
-        assert weights[ids["[p]"]] == 10.0
-        assert weights[ids["[n]"]] == 20.0
-        # Normal tokens should be 1.0
-        assert weights[0] == 1.0
-
-    def test_generate_does_not_suppress_paraphasia_tokens(self, model_and_tokenizer):
+    def test_vocab_unmodified(self, model_and_tokenizer):
         model, tokenizer = model_and_tokenizer
-        suppress = model.generation_config.suppress_tokens or []
-        ids = get_paraphasia_token_ids(tokenizer)
-        for token, token_id in ids.items():
-            assert token_id not in suppress, f"{token} is suppressed in generation"
+        # Whisper vocab should not be resized
+        vocab_size = model.whisper.model.decoder.embed_tokens.weight.shape[0]
+        assert vocab_size == model.whisper.config.vocab_size
+
+
+# ---- Classifier Head ---------------------------------------------------------
+
+
+class TestClassifierHead:
+    def test_num_classes(self):
+        assert ParaphasiaClassifierHead.NUM_CLASSES == 3
+
+    def test_forward(self):
+        head = ParaphasiaClassifierHead(hidden_size=256)
+        x = torch.randn(2, 10, 256)
+        out = head(x)
+        assert out.shape == (2, 10, 3)
+
+    def test_constants(self):
+        assert CLS_CORRECT == 0
+        assert CLS_PHONEMIC == 1
+        assert CLS_NEOLOGISTIC == 2
 
 
 # ---- Collator ----------------------------------------------------------------
+
+
+from transformers import WhisperFeatureExtractor
 
 
 class TestCollator:
@@ -138,58 +125,63 @@ class TestCollator:
         return ParaphasiaDataCollator(
             feature_extractor=feature_extractor,
             tokenizer=tokenizer,
+            use_classifier=True,
         )
 
     def test_collate_with_raw_audio(self, collator):
-        # Synthesize fake audio (1 second of silence at 16kHz)
         features = [
             {
                 "audio": {"array": np.zeros(16000, dtype=np.float32), "sampling_rate": 16000},
-                "single_seq": "the cat [p] sat",
+                "text": "the cat sat",
+                "labels": "c p c",
             },
             {
                 "audio": {"array": np.zeros(16000, dtype=np.float32), "sampling_rate": 16000},
-                "single_seq": "the dog sat",
+                "text": "the dog sat",
+                "labels": "c c c",
             },
         ]
         batch = collator(features)
         assert "input_features" in batch
         assert "labels" in batch
+        assert "cls_labels" in batch
         assert batch["input_features"].shape[0] == 2
         assert batch["labels"].shape[0] == 2
+        assert batch["cls_labels"].shape == batch["labels"].shape
+
+    def test_cls_labels_contain_paraphasia(self, collator):
+        features = [
+            {
+                "audio": {"array": np.zeros(16000, dtype=np.float32), "sampling_rate": 16000},
+                "text": "the cat sat",
+                "labels": "c p c",
+            },
+        ]
+        batch = collator(features)
+        cls = batch["cls_labels"][0]
+        # Should contain at least one phonemic label
+        assert (cls == CLS_PHONEMIC).any()
+        # Should contain correct labels
+        assert (cls == CLS_CORRECT).any()
 
     def test_labels_have_padding_masked(self, collator):
         features = [
             {
                 "audio": {"array": np.zeros(16000, dtype=np.float32), "sampling_rate": 16000},
-                "single_seq": "short",
+                "text": "short",
+                "labels": "c",
             },
             {
                 "audio": {"array": np.zeros(16000, dtype=np.float32), "sampling_rate": 16000},
-                "single_seq": "this is a much longer sentence with more words",
+                "text": "this is a much longer sentence with more words",
+                "labels": "c c c c c c c c c",
             },
         ]
         batch = collator(features)
         labels = batch["labels"]
-        # Shorter sequence should have -100 padding at the end
         assert (labels[0] == -100).any() or labels.shape[1] == (labels[0] != -100).sum()
 
-    def test_collate_with_pre_tokenized(self, collator):
-        features = [
-            {"input_features": np.zeros((80, 3000), dtype=np.float32), "labels": [1, 2, 3]},
-            {"input_features": np.zeros((80, 3000), dtype=np.float32), "labels": [4, 5]},
-        ]
-        batch = collator(features)
-        assert batch["input_features"].shape == (2, 80, 3000)
-        assert batch["labels"].shape == (2, 3)
-        # Shorter labels should be padded with -100
-        assert batch["labels"][1, 2].item() == -100
-
     def test_time_perturbation_changes_length(self):
-        """Time perturbation should change audio length."""
-        from aphasia_modeling.model.collator import ParaphasiaDataCollator
-        from transformers import WhisperFeatureExtractor
-
         fe = WhisperFeatureExtractor.from_pretrained(MODEL_NAME)
         collator = ParaphasiaDataCollator(
             feature_extractor=fe,
@@ -198,7 +190,6 @@ class TestCollator:
         )
 
         audio = np.random.randn(16000).astype(np.float32)
-        # Run perturbation many times — at least some should change length
         lengths = set()
         for _ in range(20):
             perturbed = collator._time_perturb(audio)
@@ -209,29 +200,3 @@ class TestCollator:
     def test_spec_augment_rates(self):
         assert 1.0 in SPEC_AUGMENT_RATES
         assert len(SPEC_AUGMENT_RATES) == 7
-
-
-# ---- Inference ---------------------------------------------------------------
-
-
-class TestInferenceDecode:
-    def test_decode_strips_whisper_special_tokens(self, model_and_tokenizer):
-        """The _decode method should remove <|...|> tokens but keep [p]/[n]."""
-        from aphasia_modeling.model.inference import ParaphasiaPredictor
-
-        _, tokenizer = model_and_tokenizer
-
-        # Simulate a token sequence with Whisper special tokens + paraphasia tokens
-        text = "<|startoftranscript|><|en|><|transcribe|>the cat [p] sat<|endoftext|>"
-        # Manually apply the cleaning regex
-        import re
-        cleaned = re.sub(r"<\|[^|]*\|>", "", text)
-        cleaned = re.sub(r"\s+", " ", cleaned).strip()
-
-        assert cleaned == "the cat [p] sat"
-        assert "[p]" in cleaned
-        assert "<|" not in cleaned
-
-
-# Import needed for collator fixture
-from transformers import WhisperFeatureExtractor
