@@ -136,12 +136,18 @@ class ParaphasiaPredictor:
         """Merge decoded text with classification predictions.
 
         Decodes token by token, inserting [p]/[n] after words classified
-        as paraphasic.
+        as paraphasic. Normalizes output to lowercase, no punctuation
+        (matching CHAI reference format).
         """
         # Decode full text first (for cleanup)
         text = self.tokenizer.decode(token_ids, skip_special_tokens=True)
-        words = text.strip().split()
 
+        # Normalize: lowercase, strip punctuation (refs are lowercase no-punct)
+        text = text.lower()
+        text = re.sub(r"[^\w\s']", "", text)  # keep apostrophes for contractions
+        text = re.sub(r"\s+", " ", text).strip()
+
+        words = text.split()
         if not words:
             return ""
 

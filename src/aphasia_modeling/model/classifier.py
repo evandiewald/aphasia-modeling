@@ -203,6 +203,9 @@ class WhisperWithParaphasiaHead(nn.Module):
 
     # --- Properties needed by HF Trainer ---
 
+    _keys_to_ignore_on_save = None
+    _keys_to_ignore_on_load_missing = None
+
     @property
     def config(self):
         return self.whisper.config

@@ -11,8 +11,11 @@ Handles:
 from __future__ import annotations
 
 import random
+import warnings
 from dataclasses import dataclass, field
 from typing import Any
+
+warnings.filterwarnings("ignore", message=".*audioread.*", category=FutureWarning)
 
 import librosa
 import numpy as np
