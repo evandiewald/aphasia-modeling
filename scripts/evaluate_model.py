@@ -45,6 +45,8 @@ def parse_args() -> argparse.Namespace:
                     help="Device (cuda/cpu), auto-detects if not set")
     p.add_argument("--batch_size", type=int, default=8,
                     help="Batch size for inference")
+    p.add_argument("--threshold", type=float, default=0.5,
+                    help="Paraphasia classification threshold (0-1). Higher = fewer tags, more precise.")
     p.add_argument("--quick", type=int, default=0,
                     help="Only run on N utterances (0 = all)")
     return p.parse_args()
@@ -65,7 +67,9 @@ def main():
 
     # Load model
     print(f"Loading model from {args.model_path}...")
-    predictor = ParaphasiaPredictor(args.model_path, device=args.device)
+    predictor = ParaphasiaPredictor(
+        args.model_path, device=args.device, threshold=args.threshold
+    )
 
     # Use half precision for inference if on CUDA
     if predictor.device.type == "cuda":

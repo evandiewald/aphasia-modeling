@@ -22,6 +22,8 @@ from .classifier import (
     WhisperWithParaphasiaHead,
     CLS_LABELS,
     CLS_CORRECT,
+    CLS_PHONEMIC,
+    CLS_NEOLOGISTIC,
 )
 
 
@@ -32,12 +34,21 @@ class ParaphasiaPredictor:
         self,
         model_path: str | Path,
         device: str | None = None,
+        threshold: float = 0.5,
     ):
+        """
+        Args:
+            model_path: Path to saved checkpoint.
+            device: Device to use.
+            threshold: Minimum probability to tag a word as paraphasic.
+                Higher = fewer tags (more precise), lower = more tags (more recall).
+        """
         model_path = str(model_path)
 
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = torch.device(device)
+        self.threshold = threshold
 
         self.tokenizer = WhisperTokenizerFast.from_pretrained(
             model_path, language="en", task="transcribe"
@@ -83,17 +94,13 @@ class ParaphasiaPredictor:
             device=self.device, dtype=self.model.dtype
         )
 
-        # Generate ASR transcript
         with torch.no_grad():
             generated_ids = self.model.generate(
                 input_features, **self._gen_kwargs
             )
 
-        # Classify each token position
-        cls_preds = self.model.classify(input_features, generated_ids)
-
-        # Merge ASR text with classification predictions
-        return self._merge(generated_ids[0], cls_preds[0])
+        cls_probs = self.model.classify(input_features, generated_ids)
+        return self._merge(generated_ids[0], cls_probs[0])
 
     def predict_batch(
         self,
@@ -116,10 +123,10 @@ class ParaphasiaPredictor:
                 input_features, **self._gen_kwargs
             )
 
-        cls_preds = self.model.classify(input_features, generated_ids)
+        cls_probs = self.model.classify(input_features, generated_ids)
 
         return [
-            self._merge(generated_ids[i], cls_preds[i])
+            self._merge(generated_ids[i], cls_probs[i])
             for i in range(len(audios))
         ]
 
@@ -131,42 +138,50 @@ class ParaphasiaPredictor:
         return self.predict(audio, sampling_rate=sr, **kwargs)
 
     def _merge(
-        self, token_ids: torch.Tensor, cls_preds: torch.Tensor
+        self, token_ids: torch.Tensor, cls_probs: torch.Tensor
     ) -> str:
-        """Merge decoded text with classification predictions.
+        """Merge decoded text with classification probabilities.
 
-        Decodes token by token, inserting [p]/[n] after words classified
-        as paraphasic. Normalizes output to lowercase, no punctuation
-        (matching CHAI reference format).
+        For each word, averages the paraphasia probability across its
+        subword tokens. Only tags the word if the probability exceeds
+        self.threshold.
         """
-        # Decode full text first (for cleanup)
         text = self.tokenizer.decode(token_ids, skip_special_tokens=True)
 
-        # Normalize: lowercase, strip punctuation (refs are lowercase no-punct)
+        # Normalize: lowercase, strip punctuation
         text = text.lower()
-        text = re.sub(r"[^\w\s']", "", text)  # keep apostrophes for contractions
+        text = re.sub(r"[^\w\s']", "", text)
         text = re.sub(r"\s+", " ", text).strip()
 
         words = text.split()
         if not words:
             return ""
 
-        # Get per-token predictions, skipping prefix tokens
+        # Get per-token probs, skipping prefix tokens
         prefix_len = len(self.tokenizer.prefix_tokens)
-        preds = cls_preds[prefix_len:].tolist()
+        probs = cls_probs[prefix_len:]  # (seq_len, 3)
 
-        # Map token positions back to words by tokenizing each word
+        # Map token positions back to words
         result = []
         token_pos = 0
         for word in words:
             word_tokens = self.tokenizer.encode(word, add_special_tokens=False)
             n_tokens = len(word_tokens)
 
-            # Take the majority vote across the word's tokens
-            word_preds = preds[token_pos: token_pos + n_tokens]
-            if word_preds:
-                # Use max (most "paraphasic") prediction for the word
-                word_cls = max(word_preds)
+            # Average probabilities across the word's subword tokens
+            word_probs = probs[token_pos: token_pos + n_tokens]
+            if len(word_probs) > 0:
+                avg_probs = word_probs.mean(dim=0)  # (3,)
+                # Check if any paraphasia class exceeds threshold
+                p_prob = avg_probs[CLS_PHONEMIC].item()
+                n_prob = avg_probs[CLS_NEOLOGISTIC].item()
+                para_prob = p_prob + n_prob
+
+                if para_prob >= self.threshold:
+                    # Pick the more likely paraphasia type
+                    word_cls = CLS_PHONEMIC if p_prob >= n_prob else CLS_NEOLOGISTIC
+                else:
+                    word_cls = CLS_CORRECT
             else:
                 word_cls = CLS_CORRECT
 

@@ -158,7 +158,7 @@ class WhisperWithParaphasiaHead(nn.Module):
             decoder_input_ids: Token IDs from generate() output.
 
         Returns:
-            Predicted class per position (batch, seq_len) — 0/1/2.
+            Softmax probabilities per position (batch, seq_len, 3).
         """
         with torch.no_grad():
             outputs = self.whisper(
@@ -168,7 +168,7 @@ class WhisperWithParaphasiaHead(nn.Module):
             )
             decoder_hidden = outputs.decoder_hidden_states[-1]
             cls_logits = self.classifier(decoder_hidden)
-            return cls_logits.argmax(dim=-1)
+            return torch.softmax(cls_logits, dim=-1)
 
     def generate(self, *args, **kwargs):
         """Delegate to Whisper's generate for ASR inference."""
