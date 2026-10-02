@@ -212,7 +212,7 @@ requires-dist = [
     { name = "soundfile", specifier = ">=0.12" },
     { name = "torch", specifier = ">=2.0" },
     { name = "tqdm", specifier = ">=4.65" },
-    { name = "transformers", specifier = ">=4.36" },
+    { name = "transformers", specifier = ">=5.0" },
     { name = "wandb", specifier = ">=0.25.1" },
 ]
 provides-extras = ["dev"]

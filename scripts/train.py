@@ -207,7 +207,7 @@ def train_fold(
         per_device_eval_batch_size=args.batch_size * 2,
         gradient_accumulation_steps=args.grad_accum,
         learning_rate=args.lr,
-        warmup_ratio=args.warmup_ratio,
+        warmup_steps=args.warmup_ratio,  # float < 1 is a ratio in transformers v5
         fp16=args.fp16,
         bf16=args.bf16,
         gradient_checkpointing=args.gradient_checkpointing,
