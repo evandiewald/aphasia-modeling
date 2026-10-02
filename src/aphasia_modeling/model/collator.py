@@ -1,11 +1,11 @@
-"""Data collator for Whisper paraphasia fine-tuning.
+"""Data collator for Whisper single-seq paraphasia fine-tuning.
 
 Handles:
 - Audio feature extraction via WhisperFeatureExtractor
-- Target sequence tokenization (plain ASR text — no paraphasia tokens)
-- Utterance-level classification labels (has_p, has_n)
+- Target tokenization in single-seq format ("word [p] word word [n]")
+- Choosing which tag classes are trained on (others become plain words)
 - Padding and label masking (-100 for pad tokens in labels)
-- SpecAugment time perturbation (speed changes per CHAI rates)
+- Time perturbation (speed changes at CHAI's rates)
 """
 
 from __future__ import annotations
@@ -20,121 +20,83 @@ import numpy as np
 import torch
 from transformers import WhisperFeatureExtractor, WhisperTokenizerFast
 
+from ..data.preprocess import to_single_seq
+from .tokenizer import format_target
+
 warnings.filterwarnings("ignore", message=".*audioread.*")
 warnings.filterwarnings("ignore", message=".*PySoundFile failed.*")
 
-# CHAI SpecAugment time perturbation rates
+# CHAI time perturbation rates
 SPEC_AUGMENT_RATES = [0.8, 0.9, 0.95, 1.0, 1.05, 1.1, 1.2]
 
 
 @dataclass
 class ParaphasiaDataCollator:
-    """Collator for Whisper paraphasia training.
+    """Collator for Whisper single-seq paraphasia training.
 
     Expects each example to have:
-    - "audio_path": str path to WAV file (with start_time/end_time)
+    - "audio_path" (with "start_time"/"end_time" in seconds)
       OR "audio": dict with "array" and "sampling_rate"
-    - "text": str plain text (ASR target, no paraphasia tokens)
-    - "labels": str space-separated paraphasia labels ("c p c c n")
+    - "text": space-separated words
+    - "labels": space-separated per-word labels ("c p c c n")
 
     Returns dict with:
     - "input_features": mel spectrogram tensor
-    - "labels": token IDs for ASR loss
-    - "cls_labels": utterance-level binary labels (batch, 2) for [has_p, has_n]
+    - "labels": target token IDs, -100 on padding
     """
 
     feature_extractor: WhisperFeatureExtractor
     tokenizer: WhisperTokenizerFast
     apply_time_perturbation: bool = False
-    use_classifier: bool = False
+    # Tag classes to train on; words with other labels are untagged targets
+    tag_classes: tuple[str, ...] = ("p", "n", "s")
 
     def __call__(self, features: list[dict[str, Any]]) -> dict[str, torch.Tensor]:
-        # --- Audio features ---
-        has_audio_path = "audio_path" in features[0] and features[0]["audio_path"]
-        has_raw_audio = "audio" in features[0] and features[0]["audio"] is not None
-
-        if has_audio_path:
-            input_features = self._load_and_extract(features)
-        elif has_raw_audio:
-            input_features = self._extract_audio_features(features)
+        if features[0].get("audio_path"):
+            arrays = [self._load_segment(f) for f in features]
         else:
-            input_features = torch.tensor(
-                np.stack([f["input_features"] for f in features]),
-                dtype=torch.float32,
-            )
+            arrays = [self._raw_audio(f) for f in features]
 
-        # --- ASR labels ---
-        labels = self._tokenize_targets(features)
+        if self.apply_time_perturbation:
+            arrays = [self._time_perturb(a) for a in arrays]
 
-        result = {
-            "input_features": input_features,
-            "labels": labels,
-        }
-
-        # --- Utterance-level classification labels ---
-        if self.use_classifier:
-            result["cls_labels"] = self._build_utterance_cls_labels(features)
-
-        return result
-
-    def _extract_audio_features(
-        self, features: list[dict[str, Any]]
-    ) -> torch.Tensor:
-        """Extract mel spectrogram features from raw audio."""
-        audio_arrays = []
-        for f in features:
-            audio = f["audio"]
-            array = audio["array"] if isinstance(audio, dict) else audio
-            if isinstance(array, np.ndarray):
-                array = array.astype(np.float32)
-
-            if self.apply_time_perturbation:
-                array = self._time_perturb(array)
-
-            audio_arrays.append(array)
-
-        batch = self.feature_extractor(
-            audio_arrays,
+        input_features = self.feature_extractor(
+            arrays,
             sampling_rate=self.feature_extractor.sampling_rate,
             return_tensors="pt",
             padding="max_length",
+        ).input_features
+
+        return {
+            "input_features": input_features,
+            "labels": self._tokenize_targets(features),
+        }
+
+    def target_text(self, feature: dict[str, Any]) -> str:
+        """Single-seq target string for one example, restricted to tag_classes."""
+        words = feature["text"].split()
+        labels = feature["labels"].split()
+        labels = [l if l in self.tag_classes else "c" for l in labels]
+        return format_target(to_single_seq(words, labels))
+
+    def _raw_audio(self, feature: dict[str, Any]) -> np.ndarray:
+        audio = feature["audio"]
+        array = audio["array"] if isinstance(audio, dict) else audio
+        return np.asarray(array, dtype=np.float32)
+
+    def _load_segment(self, feature: dict[str, Any]) -> np.ndarray:
+        start = feature["start_time"]
+        end = feature["end_time"]
+        array, _ = librosa.load(
+            feature["audio_path"],
+            sr=self.feature_extractor.sampling_rate,
+            offset=start,
+            duration=end - start,
         )
-        return batch.input_features
-
-    def _load_and_extract(
-        self, features: list[dict[str, Any]]
-    ) -> torch.Tensor:
-        """Load audio from file paths and extract features."""
-        sr = self.feature_extractor.sampling_rate
-        audio_arrays = []
-        for f in features:
-            path = f["audio_path"]
-            start = f.get("start_time", 0.0)
-            end = f.get("end_time", 0.0)
-
-            if start > 0 or end > 0:
-                duration = (end - start) if end > start else None
-                array, _ = librosa.load(path, sr=sr, offset=start, duration=duration)
-            else:
-                array, _ = librosa.load(path, sr=sr)
-
-            array = array.astype(np.float32)
-
-            if self.apply_time_perturbation:
-                array = self._time_perturb(array)
-
-            audio_arrays.append(array)
-
-        batch = self.feature_extractor(
-            audio_arrays,
-            sampling_rate=sr,
-            return_tensors="pt",
-            padding="max_length",
-        )
-        return batch.input_features
+        return array.astype(np.float32)
 
     def _time_perturb(self, audio: np.ndarray) -> np.ndarray:
-        """Apply random time perturbation (speed change)."""
+        """Apply random speed perturbation by resampling."""
         rate = random.choice(SPEC_AUGMENT_RATES)
         if rate == 1.0:
             return audio
@@ -147,45 +109,30 @@ class ParaphasiaDataCollator:
         indices = np.linspace(0, orig_len - 1, new_len)
         return np.interp(indices, np.arange(orig_len), audio).astype(np.float32)
 
-    def _tokenize_targets(
-        self, features: list[dict[str, Any]]
-    ) -> torch.Tensor:
-        """Tokenize plain text targets (no paraphasia tokens)."""
-        texts = [f.get("text", "") for f in features]
+    def _tokenize_targets(self, features: list[dict[str, Any]]) -> torch.Tensor:
+        """Tokenize single-seq targets.
 
+        The tokenizer prepends <|startoftranscript|>, but the model also
+        inserts it when shifting labels right into decoder inputs. Left in,
+        training would see it twice while generation sees it once, so it is
+        dropped here.
+        """
         encoded = self.tokenizer(
-            texts,
+            [self.target_text(f) for f in features],
             padding=True,
             truncation=True,
             max_length=448,
             return_tensors="pt",
         )
-
         labels = encoded.input_ids
 
-        # Mask padding with -100 (keep first EOS)
-        pad_id = self.tokenizer.pad_token_id
-        for i in range(labels.size(0)):
-            token_ids = labels[i].tolist()
-            try:
-                first_eos = token_ids.index(pad_id)
-                labels[i, first_eos + 1:] = -100
-            except ValueError:
-                pass
+        sot = self.tokenizer.convert_tokens_to_ids("<|startoftranscript|>")
+        if (labels[:, 0] == sot).all():
+            labels = labels[:, 1:]
+            attention = encoded.attention_mask[:, 1:]
+        else:
+            attention = encoded.attention_mask
 
-        return labels
-
-    def _build_utterance_cls_labels(
-        self, features: list[dict[str, Any]]
-    ) -> torch.Tensor:
-        """Build utterance-level binary classification labels.
-
-        Returns (batch, 2) float tensor: [has_phonemic, has_neologistic].
-        """
-        batch_labels = []
-        for f in features:
-            word_labels = f.get("labels", "").split()
-            has_p = 1.0 if "p" in word_labels else 0.0
-            has_n = 1.0 if "n" in word_labels else 0.0
-            batch_labels.append([has_p, has_n])
-        return torch.tensor(batch_labels, dtype=torch.float32)
+        # Pad and EOS share an ID in Whisper; attention_mask marks the real
+        # EOS as content, so only true padding gets masked.
+        return labels.masked_fill(attention.ne(1), -100)

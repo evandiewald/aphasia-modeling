@@ -40,13 +40,13 @@ IPA_TO_GRAPHEME = {
 }
 
 # Patterns that cause the entire utterance to be skipped
-SKIP_UTTERANCE_MARKERS = {"[?]", "xxx", "[<>]", "[+ exc]"}
+SKIP_UTTERANCE_MARKERS = {"[?]", "xxx", "yyy", "www", "[<>]", "[+ exc]"}
 
-# Vocal events to remove
-VOCAL_EVENT_PATTERN = re.compile(r"&=[a-zA-Z_:.]+")
+# Vocal events / gestures to remove (e.g. &=laughs, &=points:picture_2)
+VOCAL_EVENT_PATTERN = re.compile(r"&=\S+")
 
-# Fragment pattern (false starts)
-FRAGMENT_PATTERN = re.compile(r"&[-+][a-zA-Z]*")
+# Fragments, fillers, and interposed speech (e.g. &-uh, &+fr, &-you_know, &*INV:yeah)
+FRAGMENT_PATTERN = re.compile(r"&[-+*~]\S*")
 
 # Special form codes that cause word to be skipped
 SKIP_SPECIAL_FORMS = {"@n", "@o", "@s", "@b", "@si"}
@@ -122,7 +122,7 @@ def to_single_seq(words: list[str], labels: list[str]) -> str:
     parts = []
     for word, label in zip(words, labels):
         parts.append(word)
-        if label in ("p", "n"):
+        if label in ("p", "n", "s"):
             parts.append(f"[{label}]")
     return " ".join(parts)
 
@@ -136,10 +136,10 @@ def parse_single_seq(text: str) -> tuple[list[str], list[str]]:
     words = []
     labels = []
     for token in tokens:
-        if token in ("[p]", "[n]"):
+        if token in ("[p]", "[n]", "[s]"):
             # Attach label to the preceding word
             if labels:
-                labels[-1] = token[1]  # "p" or "n"
+                labels[-1] = token[1]  # "p", "n", or "s"
         else:
             words.append(token)
             labels.append("c")
@@ -317,10 +317,11 @@ def _extract_error_code(block: list[str]) -> str:
         return "p"
     elif code.startswith("n"):
         return "n"
+    elif code.startswith("s"):
+        return "s"
     else:
-        # Semantic paraphasias (s) are handled by Stage 2 LLM, not the
-        # acoustic model. All other error types (d, m, f, s, etc.) are
-        # treated as correct for Stage 1.
+        # Other error types (d=dysfluency, m=morphological, f=formal, etc.)
+        # Treat as correct for paraphasia detection purposes
         return "c"
 
 

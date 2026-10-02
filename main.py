@@ -23,13 +23,13 @@ def cmd_preprocess(args: argparse.Namespace) -> None:
     print(f"  {len(valid)} valid after preprocessing ({len(utterances) - len(valid)} skipped)")
 
     # Print label distribution
-    label_counts = {"c": 0, "p": 0, "n": 0}
+    label_counts = {"c": 0, "p": 0, "n": 0, "s": 0}
     for utt in valid:
         for label in utt.labels:
             label_counts[label] = label_counts.get(label, 0) + 1
     total_words = sum(label_counts.values())
     print(f"  Word-level label distribution ({total_words} total words):")
-    for label in ("c", "p", "n"):
+    for label in ("c", "p", "n", "s"):
         count = label_counts[label]
         pct = 100 * count / total_words if total_words else 0
         print(f"    [{label}]: {count} ({pct:.1f}%)")

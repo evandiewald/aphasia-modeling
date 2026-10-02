@@ -17,11 +17,11 @@ Research project building a model for joint ASR and multiclass paraphasia detect
 
 **Two-stage pipeline:**
 
-1. **Stage 1 — Whisper + Paraphasia Tokens:** Fine-tuned Whisper (`openai/whisper-small`) with 3 added special tokens (`[p]`, `[n]`, `[s]`) for inline paraphasia classification. Uses HuggingFace Transformers (`WhisperForConditionalGeneration`). Training is two-phase: ASR adaptation on AphasiaBank Protocol (~100h), then paraphasia-aware fine-tuning on Fridriksson subset (~3h).
+1. **Stage 1 — Whisper + Paraphasia Tokens:** Fine-tuned Whisper (`openai/whisper-small`) with 3 added tag tokens (`[p]`, `[n]`, `[s]`) emitted inline after paraphasic words (CHAI's single-seq format). Uses HuggingFace Transformers (`WhisperForConditionalGeneration`). Currently trained only on Scripts-Fridriksson with 12-fold LOSO; `--tag_classes pn` leaves `[s]` to Stage 2. CHAI additionally pretrained on ~100h of Protocol data (not yet replicated).
 
 2. **Stage 2 — LLM Semantic Detection:** Prompt-based LLM pass over Stage 1 transcripts to catch semantic paraphasias (real words substituted for intended words), which are acoustically indistinguishable from correct speech. Conditional on exploration phase showing ≥20% of semantic paraphasias are detectable without target text.
 
-**Key datasets:** AphasiaBank (primary, required), SONIVA (optional, ASR pretraining only). Must use identical train/dev/test splits as CHAI for comparability.
+**Key datasets:** CHAI evaluates on **Scripts**-Fridriksson (`datasets/Scripts/Fridriksson`, participants reading 4 fixed scripts; ~3h, 12 speakers after dropping `xxx` utterances), NOT the Protocol Fridriksson corpora in `datasets/Protocol/` (spontaneous discourse). Built dataset: `datasets/Scripts/scripts_fridriksson.json`. Because every speaker reads the same scripts, speaker-held-out folds still share text across train/test. SONIVA is optional, ASR pretraining only.
 
 **Evaluation metrics:** WER, AWER, TD-binary, TD-multiclass (TD-[p], TD-[n], TD-[s], TD-all), utterance-level binary F1. Statistical significance via bootstrap (WER/AWER) and repeated measures ANOVA + Tukey (TD). See `docs/paraphasia_detection_plan.md` for baseline numbers and full metric definitions.
 
@@ -34,12 +34,15 @@ uv run pytest tests/test_preprocess.py -k "test_phonemic"  # Run a single test
 uv run python main.py preprocess <cha_dir> # Parse & preprocess CHAT files
 uv run python main.py evaluate <ref> <hyp> # Run evaluation metrics
 
-# Training (on GPU instance)
-python scripts/train.py --phase 1 --data_path data/protocol.json --output_dir checkpoints/phase1
-python scripts/train.py --phase 2 --data_path data/fridriksson.json --output_dir checkpoints/phase2 --loso --class_weights
+uv run python main.py preprocess datasets/Scripts/Fridriksson/PWA --audio-dir datasets/Scripts/Fridriksson/audio -o datasets/Scripts/scripts_fridriksson.json
 
-# Evaluation (on GPU instance)
-python scripts/evaluate_model.py --model_path checkpoints/phase2/fold_spk --data_path data/fridriksson.json --test_speaker spk
+# Training (on GPU instance) — one checkpoint per fold under output_dir/fold_<spk>
+python scripts/train.py --data_path datasets/Scripts/scripts_fridriksson.json --output_dir checkpoints/scripts-small --loso --bf16
+python scripts/train.py ... --test_speaker P1      # single fold
+python scripts/train.py ... --max_steps 4 --model_name openai/whisper-tiny  # local smoke test
+
+# Evaluation — pools predictions over all folds (as CHAI reports)
+python scripts/evaluate_model.py --model_dir checkpoints/scripts-small --data_path datasets/Scripts/scripts_fridriksson.json --loso
 ```
 
 ## Code Layout
@@ -49,18 +52,18 @@ python scripts/evaluate_model.py --model_path checkpoints/phase2/fold_spk --data
   - `preprocess.py` — CHAI-compatible cleaning: bracket handling, error code extraction (`[* p]` → `p`), IPA-to-pseudoword, single-seq format (`"word [p] word [n]"`)
   - `dataset.py` — `AphasiaBankDataset` class with LOSO cross-validation (12 folds, seed 883, 10% dev), HuggingFace Dataset conversion, JSON serialization
 - `src/aphasia_modeling/model/` — Whisper training and inference
-  - `tokenizer.py` — Extends Whisper tokenizer with `[p]`, `[n]`, `[s]` special tokens
+  - `tokenizer.py` — Adds `[p]`, `[n]`, `[s]` as non-special tokens with lstrip (no stray space token before tags); output normalization
   - `whisper.py` — Model setup: load pretrained Whisper, resize embeddings, mean-init new tokens, freeze/unfreeze encoder, class weight tensor
-  - `collator.py` — Data collator: audio feature extraction, target tokenization, padding, SpecAugment time perturbation
-  - `trainer.py` — `ParaphasiaTrainer` (extends `Seq2SeqTrainer`) with per-token class-weighted cross-entropy loss
-  - `inference.py` — `ParaphasiaPredictor`: load checkpoint, decode audio to single-seq format
+  - `collator.py` — Data collator: audio loading, single-seq targets (drops the duplicate `<|startoftranscript|>`), `tag_classes` filter, time perturbation
+  - `trainer.py` — `ParaphasiaTrainer` (extends `Seq2SeqTrainer`) with optional tag-token loss weighting (`--tag_weight`)
+  - `inference.py` — `ParaphasiaPredictor`: decode audio to single-seq format; >30s audio is chunked; decoder loops are collapsed (no n-gram blocking, which would delete real repetitions)
 - `src/aphasia_modeling/evaluation/` — Metrics matching CHAI exactly
   - `alignment.py` — Levenshtein alignment with paraphasia tag reinsertion
   - `metrics.py` — WER, AWER, AWER-PD, TD-binary, TD-multiclass, utterance-level F1
   - `significance.py` — Bootstrap (WER/AWER) and ANOVA+Tukey (TD)
 - `scripts/` — Standalone scripts for GPU training
-  - `train.py` — Main training script (Phase 1 ASR adaptation + Phase 2 paraphasia fine-tuning, LOSO CV support)
-  - `evaluate_model.py` — Run inference + compute all CHAI metrics on test set
+  - `train.py` — Single-seq fine-tuning, one fold (`--test_speaker`) or all LOSO folds (`--loso`)
+  - `evaluate_model.py` — Run inference per fold + compute all CHAI metrics, pooled and per fold
 
 ## Key Reference
 

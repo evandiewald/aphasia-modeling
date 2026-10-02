@@ -19,6 +19,9 @@ _FRIDRIKSSON_SPK_PATTERN = re.compile(r"^(fridriksson\d+)[a-z]$")
 # Fridriksson-2 sessions are named like "1003-1", "1003-LARC" -> speaker "1003"
 _FRIDRIKSSON2_SPK_PATTERN = re.compile(r"^(\d+)-(?:\d+|LARC)$")
 
+# Scripts-Fridriksson sessions are named like "P1_B2_SA_C1" -> speaker "P1"
+_SCRIPTS_SPK_PATTERN = re.compile(r"^(P\d+)_")
+
 
 @dataclass
 class Utterance:
@@ -47,6 +50,15 @@ class Utterance:
 # Databases excluded by CHAI
 EXCLUDED_DATABASES = {"kempler", "garrett"}
 
+# Sessions whose TalkBank media is unusable. In Scripts-Fridriksson, each pair
+# below shares a byte-identical video despite different transcripts/timings,
+# so at least one per pair has the wrong audio (and the P13 video is corrupt
+# past 30.7s). We can't tell which is correct, so both are dropped.
+EXCLUDED_SESSIONS = {
+    "P12_B2_SV_C1", "P12_P2_SV_C4",
+    "P13_B2_SE_C1", "P13_P2_SE_C4",
+}
+
 # Timing marker pattern: \x15start_end\x15
 TIMING_PATTERN = re.compile(r"\x15(\d+)_(\d+)\x15")
 
@@ -73,11 +85,15 @@ def parse_cha_file(
     cha_path = Path(cha_path)
     session_id = cha_path.stem
 
-    # Infer database from grandparent dir (data/Fridriksson/PWA/file.cha -> Fridriksson)
-    # Fall back to parent if structure is flat (data/Fridriksson/file.cha -> Fridriksson)
-    parent = cha_path.parent.name
-    grandparent = cha_path.parent.parent.name
-    database = grandparent if parent.upper() == "PWA" else parent
+    # Infer database from the dir above PWA, which may be nested
+    # (data/Fridriksson/PWA/file.cha or data/Fridriksson/PWA/P1/eggs/file.cha
+    # -> Fridriksson). Fall back to parent if there is no PWA dir.
+    dirs = [p.name for p in cha_path.parents]
+    pwa_idx = next((i for i, d in enumerate(dirs) if d.upper() == "PWA"), None)
+    if pwa_idx is not None and pwa_idx + 1 < len(dirs):
+        database = dirs[pwa_idx + 1]
+    else:
+        database = cha_path.parent.name
 
     if audio_dir is not None:
         audio_dir = Path(audio_dir)
@@ -90,6 +106,10 @@ def parse_cha_file(
     for utt_idx, (raw_text, start_ms, end_ms) in enumerate(par_lines):
         if not raw_text.strip():
             continue
+        # Untimed utterances have no audio segment; loading them would read
+        # the whole session file against a short transcript.
+        if end_ms <= start_ms:
+            continue
 
         utt_id = f"{session_id}_{utt_idx:04d}"
         utt = Utterance(
@@ -99,8 +119,8 @@ def parse_cha_file(
             session_id=session_id,
             database=database,
             speaker_id=_session_to_speaker(session_id),
-            start_time=start_ms / 1000.0 if start_ms else 0.0,
-            end_time=end_ms / 1000.0 if end_ms else 0.0,
+            start_time=start_ms / 1000.0,
+            end_time=end_ms / 1000.0,
         )
 
         if audio_dir is not None:
@@ -176,6 +196,9 @@ def _session_to_speaker(session_id: str) -> str:
     m = _FRIDRIKSSON2_SPK_PATTERN.match(session_id)
     if m:
         return m.group(1)
+    m = _SCRIPTS_SPK_PATTERN.match(session_id)
+    if m:
+        return m.group(1)
     return session_id
 
 
@@ -203,6 +226,8 @@ def parse_cha_directory(
         # Check if this file belongs to an excluded database
         db_name = cha_path.parent.name.lower()
         if db_name in {d.lower() for d in exclude_databases}:
+            continue
+        if cha_path.stem in EXCLUDED_SESSIONS:
             continue
 
         utterances = parse_cha_file(cha_path, audio_dir)

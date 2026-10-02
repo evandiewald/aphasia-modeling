@@ -1,24 +1,24 @@
-"""Whisper model setup for paraphasia detection.
+"""Whisper model setup for single-seq paraphasia detection.
 
 Handles:
-- Loading pretrained Whisper (unmodified vocabulary)
-- Wrapping with WhisperWithParaphasiaHead for utterance classification
-- Configuring generation parameters
-- Optional encoder/decoder freezing for head-only training
+- Loading pretrained Whisper and resizing embeddings for the tag tokens
+- Mean-initializing the new tag embeddings
+- Configuring generation so the tags aren't suppressed
+- Optional encoder freezing and per-token loss weights for the tags
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import torch
 from transformers import (
+    GenerationConfig,
     WhisperForConditionalGeneration,
     WhisperTokenizerFast,
-    GenerationConfig,
 )
 
-from .classifier import WhisperWithParaphasiaHead
+from .tokenizer import build_tokenizer, get_paraphasia_token_ids
 
 
 @dataclass
@@ -29,69 +29,46 @@ class WhisperParaphasiaConfig:
     language: str = "en"
     task: str = "transcribe"
     freeze_encoder: bool = False
-    freeze_decoder: bool = False
-    # Classification head weight relative to ASR loss
-    cls_alpha: float = 1.0
-    # Positive class weights for BCE loss: [pw_phonemic, pw_neologistic]
-    cls_pos_weights: list[float] | None = None
+    # Initialize new token embeddings as mean of existing embeddings
+    init_new_embeddings_from_mean: bool = True
 
 
 def build_model(
     config: WhisperParaphasiaConfig | None = None,
     tokenizer: WhisperTokenizerFast | None = None,
-) -> tuple[WhisperWithParaphasiaHead, WhisperTokenizerFast]:
-    """Build Whisper model with utterance-level paraphasia classification head.
+) -> tuple[WhisperForConditionalGeneration, WhisperTokenizerFast]:
+    """Build Whisper with the paraphasia tag tokens.
 
-    Args:
-        config: Model configuration. Uses defaults if None.
-        tokenizer: Pre-built tokenizer. If None, loads stock Whisper tokenizer.
-
-    Returns:
-        (model, tokenizer) tuple ready for training.
+    Works for both a stock checkpoint (tags get added and initialized) and
+    a fine-tuned one (tags already present; nothing is resized).
     """
     if config is None:
         config = WhisperParaphasiaConfig()
 
     if tokenizer is None:
-        tokenizer = WhisperTokenizerFast.from_pretrained(
-            config.model_name,
+        tokenizer = build_tokenizer(
+            model_name=config.model_name,
             language=config.language,
             task=config.task,
         )
 
-    # Load Whisper with SDPA if available
     try:
-        whisper = WhisperForConditionalGeneration.from_pretrained(
+        model = WhisperForConditionalGeneration.from_pretrained(
             config.model_name, attn_implementation="sdpa"
         )
     except (ValueError, ImportError):
-        whisper = WhisperForConditionalGeneration.from_pretrained(
-            config.model_name
-        )
+        model = WhisperForConditionalGeneration.from_pretrained(config.model_name)
 
-    # Freeze encoder/decoder if requested
+    old_vocab_size = model.get_input_embeddings().weight.shape[0]
+    if len(tokenizer) > old_vocab_size:
+        model.resize_token_embeddings(len(tokenizer), mean_resizing=False)
+        if config.init_new_embeddings_from_mean:
+            _init_new_embeddings(model, old_vocab_size)
+
     if config.freeze_encoder:
-        freeze_encoder(whisper)
-    if config.freeze_decoder:
-        freeze_decoder(whisper)
+        freeze_encoder(model)
 
-    # Configure generation
-    whisper.generation_config = GenerationConfig.from_pretrained(
-        config.model_name,
-    )
-    whisper.generation_config.language = config.language
-    whisper.generation_config.task = config.task
-
-    # Wrap with classification head
-    model = WhisperWithParaphasiaHead(
-        whisper,
-        alpha=config.cls_alpha,
-        cls_pos_weights=config.cls_pos_weights,
-    )
-
-    # If both encoder and decoder are frozen, only train the head
-    if config.freeze_encoder and config.freeze_decoder:
-        model.cls_only = True
+    model.generation_config = _build_generation_config(model, config, tokenizer)
 
     return model, tokenizer
 
@@ -108,10 +85,47 @@ def unfreeze_encoder(model: WhisperForConditionalGeneration) -> None:
         param.requires_grad = True
 
 
-def freeze_decoder(model: WhisperForConditionalGeneration) -> None:
-    """Freeze all decoder and output projection parameters."""
-    for param in model.model.decoder.parameters():
-        param.requires_grad = False
-    if model.proj_out is not None:
-        for param in model.proj_out.parameters():
-            param.requires_grad = False
+def get_class_weight_tensor(
+    tokenizer: WhisperTokenizerFast,
+    tag_weight: float,
+) -> torch.Tensor:
+    """Per-token cross-entropy weights: `tag_weight` for tags, 1 elsewhere."""
+    weights = torch.ones(len(tokenizer))
+    for token_id in get_paraphasia_token_ids(tokenizer).values():
+        weights[token_id] = tag_weight
+    return weights
+
+
+def _init_new_embeddings(
+    model: WhisperForConditionalGeneration,
+    old_vocab_size: int,
+) -> None:
+    """Initialize new token embeddings as the mean of existing embeddings.
+
+    Whisper ties proj_out to embed_tokens, so this covers the output
+    projection too; untied heads are handled separately just in case.
+    """
+    with torch.no_grad():
+        embed = model.get_input_embeddings().weight
+        embed[old_vocab_size:] = embed[:old_vocab_size].mean(dim=0)
+
+        proj = model.get_output_embeddings().weight
+        if proj.data_ptr() != embed.data_ptr():
+            proj[old_vocab_size:] = proj[:old_vocab_size].mean(dim=0)
+
+
+def _build_generation_config(
+    model: WhisperForConditionalGeneration,
+    config: WhisperParaphasiaConfig,
+    tokenizer: WhisperTokenizerFast,
+) -> GenerationConfig:
+    """Whisper generation config with the tag tokens unsuppressed."""
+    try:
+        gen = GenerationConfig.from_pretrained(config.model_name)
+    except OSError:
+        gen = model.generation_config
+    gen.language = config.language
+    gen.task = config.task
+    tag_ids = set(get_paraphasia_token_ids(tokenizer).values())
+    gen.suppress_tokens = [t for t in (gen.suppress_tokens or []) if t not in tag_ids]
+    return gen

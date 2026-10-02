@@ -150,7 +150,7 @@ class AphasiaBankDataset:
             expanded = []
             for utt in utts:
                 expanded.append(utt)
-                if any(l in ("p", "n") for l in utt.labels):
+                if any(l != "c" for l in utt.labels):
                     for _ in range(oversample_paraphasia - 1):
                         expanded.append(utt)
             utts = expanded

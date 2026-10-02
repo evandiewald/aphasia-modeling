@@ -77,10 +77,14 @@ class TestErrorCodes:
         utt = _preprocess("the blicket [* n] sat")
         assert utt.labels[1] == "n"
 
-    def test_semantic_treated_as_correct(self):
-        """Semantic paraphasias are handled by Stage 2 LLM, not acoustic model."""
+    def test_semantic(self):
         utt = _preprocess("the table [* s] sat")
-        assert utt.labels[1] == "c"
+        assert utt.labels[1] == "s"
+
+    def test_semantic_subtype(self):
+        """[* s:r:gc:pro] should map to 's'."""
+        utt = _preprocess("for them [: me] [* s:r:gc:pro] to")
+        assert utt.labels == ["c", "s", "c"]
 
     def test_subtype_p_colon_k(self):
         """[* p:k] should map to 'p'."""
@@ -172,6 +176,21 @@ class TestVocalEventsAndFragments:
     def test_false_start_removed(self):
         utt = _preprocess("the &+well cat sat")
         assert len(utt.words) == 3
+
+    def test_gesture_with_digits_removed(self):
+        utt = _preprocess("the &=points:picture_2 cat sat")
+        assert utt.words == ["the", "cat", "sat"]
+
+    def test_compound_filler_removed(self):
+        utt = _preprocess("&-you_know the cat sat")
+        assert utt.words == ["the", "cat", "sat"]
+
+    def test_interposed_speech_removed(self):
+        utt = _preprocess("the &*INV:yeah cat sat")
+        assert utt.words == ["the", "cat", "sat"]
+
+    def test_www_mid_utterance_skipped(self):
+        assert not preprocess_utterance(_make_utt("the cat www sat"))
 
 
 # ---- Compound words ----------------------------------------------------------
@@ -345,10 +364,10 @@ class TestEndToEnd:
 
     def test_multiple_paraphasia_types(self):
         utt = _preprocess("the dog [* s] ran to blick [* n] and cot [* p]")
-        # [* s] -> "c" (semantic handled by Stage 2 LLM)
-        assert utt.labels == ["c", "c", "c", "c", "n", "c", "p"]
+        assert utt.labels == ["c", "s", "c", "c", "n", "c", "p"]
         seq = to_single_seq(utt.words, utt.labels)
-        assert seq == "the dog ran to blick [n] and cot [p]"
+        assert seq == "the dog [s] ran to blick [n] and cot [p]"
+        assert parse_single_seq(seq) == (utt.words, utt.labels)
 
     def test_clean_utterance_all_correct(self):
         utt = _preprocess("the cat sat on the mat")

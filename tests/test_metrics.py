@@ -88,6 +88,13 @@ class TestAWER_PD:
         # ref: "p", hyp: "p" (words dropped for p/n)
         assert compute_awer_pd(refs, hyps) == 0.0
 
+    def test_semantic_keeps_word(self):
+        """For s, the word matters."""
+        refs = [["table", "[s]"]]
+        hyps = [["chair", "[s]"]]
+        # ref: "table/s", hyp: "chair/s" -> different compound
+        assert compute_awer_pd(refs, hyps) == pytest.approx(1.0)
+
     def test_correct_words_keep_word(self):
         refs = [["the", "cat"]]
         hyps = [["the", "dog"]]
@@ -153,10 +160,11 @@ class TestTDMulticlass:
         assert td["n"] > 0
 
     def test_td_all_is_sum(self):
-        refs = [["a", "[p]", "b", "[n]", "c"]]
-        hyps = [["a", "[p]", "b", "[n]", "c"]]
+        refs = [["a", "[p]", "b", "[n]", "c", "[s]"]]
+        hyps = [["a", "[p]", "b", "[n]", "c"]]  # missed the [s]
         td = compute_td_multiclass(refs, hyps)
-        assert td["all"] == pytest.approx(td["p"] + td["n"])
+        assert td["s"] > 0
+        assert td["all"] == pytest.approx(td["p"] + td["n"] + td["s"])
 
 
 # ---- Utterance-level F1 ------------------------------------------------------

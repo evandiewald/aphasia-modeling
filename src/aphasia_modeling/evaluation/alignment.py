@@ -9,7 +9,7 @@ Implements the alignment pipeline from CHAI's evaluation.py:
 from __future__ import annotations
 
 EPS = "<eps>"
-PARAPHASIA_TAGS = {"[p]", "[n]", "[c]"}
+PARAPHASIA_TAGS = {"[p]", "[n]", "[s]", "[c]"}
 
 
 def strip_paraphasia_tags(tokens: list[str]) -> tuple[list[str], dict[int, str]]:
@@ -154,6 +154,6 @@ def reinsert_paraphasia_tags(
     result = []
     for word, label in zip(words, labels):
         result.append(word)
-        if label in ("p", "n"):
+        if label in ("p", "n", "s"):
             result.append(f"[{label}]")
     return result

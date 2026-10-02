@@ -143,12 +143,14 @@ Refer to `AphasiaBank/kaldi_data_prep` in the CHAI repo for their exact preproce
 | Single-Seq (CHAI) | 37.6 | 32.8 | 0.63 | 0.76 | 0.45 | 0.31 | 1.51 |
 | Multi-Seq (CHAI) | 44.8 | 42.9 | 0.86 | 0.90 | 0.72 | 0.53 | 2.15 |
 
-And utterance-level F1 (from their Figure 2, approximate):
+And utterance-level F1 (bar labels from their Figure 2):
 
 | Model | F1-[p] | F1-[n] | F1-[s] |
 |-------|--------|--------|--------|
-| ASR+GPT-4 | ~0.52 | ~0.63 | ~0.15 |
-| Single-Seq (CHAI) | ~0.56 | ~0.61 | ~0.12 |
+| ASR+GPT-3.5 | 0.21 | 0.55 | 0.08 |
+| ASR+GPT-4 | 0.52 | 0.63 | 0.18 |
+| Single-Seq (CHAI) | 0.72 | 0.61 | 0.25 |
+| Multi-Seq (CHAI) | 0.60 | 0.64 | 0.38 |
 
 ---
 
