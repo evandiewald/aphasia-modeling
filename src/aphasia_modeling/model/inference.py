@@ -10,9 +10,9 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from transformers import WhisperFeatureExtractor
+from transformers import LogitsProcessor, LogitsProcessorList, WhisperFeatureExtractor
 
-from .tokenizer import normalize_output
+from .tokenizer import get_paraphasia_token_ids, normalize_output
 from .whisper import WhisperParaphasiaConfig, build_model
 
 SAMPLING_RATE = 16000
@@ -61,6 +61,9 @@ class ParaphasiaPredictor:
             "task": "transcribe",
             "max_new_tokens": 440,
             "num_beams": num_beams,
+            "logits_processor": LogitsProcessorList([
+                NoTagAfterTag(list(get_paraphasia_token_ids(self.tokenizer).values()))
+            ]),
         }
 
     def predict(self, audio: np.ndarray) -> str:
@@ -121,6 +124,23 @@ class ParaphasiaPredictor:
 
         audio, _ = librosa.load(str(audio_path), sr=SAMPLING_RATE, mono=True)
         return self.predict(audio)
+
+
+class NoTagAfterTag(LogitsProcessor):
+    """Forbid a tag right after a tag; single-seq never has two in a row.
+
+    Without it a decoder that emits one tag can get stuck emitting tags
+    ("and i [s] [s] [s] [s] ..."), swallowing the rest of the utterance.
+    """
+
+    def __init__(self, tag_ids: list[int]):
+        self.tag_ids = torch.tensor(tag_ids)
+
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
+        tag_ids = self.tag_ids.to(scores.device)
+        after_tag = torch.isin(input_ids[:, -1], tag_ids).nonzero(as_tuple=True)[0]
+        scores[after_tag.unsqueeze(1), tag_ids] = -float("inf")
+        return scores
 
 
 def collapse_loops(

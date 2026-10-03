@@ -9,7 +9,13 @@ import torch
 from transformers import WhisperFeatureExtractor
 
 from aphasia_modeling.model.collator import ParaphasiaDataCollator, SPEC_AUGMENT_RATES
-from aphasia_modeling.model.inference import ParaphasiaPredictor, _split, _token_cap, collapse_loops
+from aphasia_modeling.model.inference import (
+    NoTagAfterTag,
+    ParaphasiaPredictor,
+    _split,
+    _token_cap,
+    collapse_loops,
+)
 from aphasia_modeling.model.tokenizer import (
     PARAPHASIA_TOKENS,
     build_tokenizer,
@@ -169,6 +175,16 @@ class TestTagTraining:
         assert (m["pred_p"], m["pred_n"], m["pred_s"]) == (2, 0, 0)
         assert m["recall_p"] == 1.0 and m["recall_n"] == 0.0
         assert m["tag_class_acc"] == 2 / 3
+
+
+class TestNoTagAfterTag:
+    def test_blocks_tags_only_after_a_tag(self):
+        proc = NoTagAfterTag([10, 11, 12])
+        input_ids = torch.tensor([[1, 5], [1, 11]])  # word, then tag
+        scores = proc(input_ids, torch.zeros(2, 13))
+        assert torch.isfinite(scores[0]).all()
+        assert torch.isinf(scores[1, [10, 11, 12]]).all()
+        assert torch.isfinite(scores[1, :10]).all()
 
 
 # ---- Collator ----------------------------------------------------------------
