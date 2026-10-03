@@ -48,6 +48,8 @@ def parse_args() -> argparse.Namespace:
                     help="Path to preprocessed dataset JSON")
     p.add_argument("--loso", action="store_true", default=False,
                     help="Evaluate every fold and pool predictions")
+    p.add_argument("--speakers", type=str, default=None,
+                    help="With --loso: only evaluate these comma-separated folds")
     p.add_argument("--test_speaker", type=str, default=None,
                     help="Speaker held out by the checkpoint in --model_dir")
     p.add_argument("--output_dir", type=str, default=None,
@@ -113,7 +115,10 @@ def main():
     dataset = AphasiaBankDataset.load(args.data_path)
 
     if args.loso:
-        folds = [(spk, model_dir / f"fold_{spk}") for spk in dataset.speakers]
+        speakers = dataset.speakers
+        if args.speakers:
+            speakers = [s for s in speakers if s in args.speakers.split(",")]
+        folds = [(spk, model_dir / f"fold_{spk}") for spk in speakers]
         missing = [str(d) for _, d in folds if not d.exists()]
         if missing:
             print(f"Error: missing fold checkpoints: {missing}")

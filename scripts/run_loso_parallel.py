@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """Run LOSO folds in parallel, one train.py process per GPU.
 
-Each GPU pulls the next unfinished speaker from a shared queue. With
---wandb_artifacts every finished fold is uploaded as a W&B model artifact
-(`<run_name>-fold_<spk>`), and folds that already have one are skipped, so a
-lost machine only costs the folds in progress. Arguments this script doesn't
-recognize are passed through to train.py.
+Each GPU pulls the next unfinished speaker from a shared queue. Finished
+folds can be kept somewhere that outlives the machine, and folds already kept
+there are skipped, so a lost machine only costs the folds in progress:
+  --keep_dir DIR       copy each finished fold to DIR/fold_<spk> (e.g. Kaggle's
+                       persisted /kaggle/working, while output_dir is scratch)
+  --wandb_artifacts    upload each finished fold as a W&B model artifact
+                       (`<run_name>-fold_<spk>`; ~1 GB each, mind the quota)
+Arguments this script doesn't recognize are passed through to train.py.
 
 Usage:
   python scripts/run_loso_parallel.py --gpus 0,1 \
     --data_path datasets/Scripts/scripts_fridriksson.json \
     --output_dir /root/checkpoints/scripts-small-taginit \
-    --wandb_artifacts --run_name scripts-small-taginit \
+    --keep_dir /kaggle/working/checkpoints/scripts-small-taginit \
     -- --fp16 --batch_size 4 --grad_accum 4 --num_workers 2 --wandb
 
   # Later, fetch every fold for evaluate_model.py --loso
@@ -23,6 +26,7 @@ from __future__ import annotations
 import argparse
 import os
 import queue
+import shutil
 import subprocess
 import sys
 import threading
@@ -45,6 +49,8 @@ def parse_args() -> tuple[argparse.Namespace, list[str]]:
                     help="Comma-separated subset of test speakers (default: all)")
     p.add_argument("--run_name", type=str, default=None,
                     help="Prefix for W&B run and artifact names (default: output_dir name)")
+    p.add_argument("--keep_dir", type=str, default=None,
+                    help="Copy finished folds to keep_dir/fold_<spk> and skip folds already there")
     p.add_argument("--wandb_artifacts", action="store_true", default=False,
                     help="Upload finished folds as W&B artifacts and skip folds already uploaded")
     p.add_argument("--wandb_project", type=str, default="talking-points")
@@ -103,6 +109,10 @@ def train_one(args, train_args: list[str], spk: str, gpu: str) -> bool:
 
     if args.wandb_artifacts and not upload_fold(args, fold_dir, spk):
         return False
+    if args.keep_dir:
+        kept = Path(args.keep_dir) / f"fold_{spk}"
+        shutil.copytree(fold_dir, kept.with_name(kept.name + ".partial"), dirs_exist_ok=True)
+        kept.with_name(kept.name + ".partial").rename(kept)
     print(f"[{spk}] done", flush=True)
     return True
 
@@ -129,7 +139,9 @@ def main():
 
     todo = queue.Queue()
     for spk in speakers:
-        if api is not None and has_artifact(args, api, spk):
+        if args.keep_dir and (Path(args.keep_dir) / f"fold_{spk}" / "train_metrics.json").exists():
+            print(f"[{spk}] already in {args.keep_dir}, skipping", flush=True)
+        elif args.wandb_artifacts and has_artifact(args, api, spk):
             print(f"[{spk}] already uploaded, skipping", flush=True)
         else:
             todo.put(spk)

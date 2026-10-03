@@ -213,7 +213,9 @@ def _td_for_utterance(
         return None
 
     if not ref_positions and not hyp_positions:
-        return None  # No paraphasias to evaluate
+        # Nothing to find and nothing predicted: a perfect 0. CHAI averages TD
+        # over every utterance, so these must count rather than be skipped.
+        return 0.0
     if not ref_positions or not hyp_positions:
         # One side has paraphasias, the other doesn't
         # Default distance: max(position, seq_len) per CHAI

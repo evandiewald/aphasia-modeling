@@ -167,6 +167,77 @@ class TestTDMulticlass:
         assert td["all"] == pytest.approx(td["p"] + td["n"] + td["s"])
 
 
+# ---- TD vs. CHAI's reference implementation ---------------------------------
+
+# Verbatim logic of TD_helper_para_sp / TD_helper_binary from CHAI's
+# AphasiaBank/helper_scripts/evaluation.py, on per-word label lists.
+def _chai_td(true_labels, pred_labels, match):
+    ttc = 0
+    for i, t in enumerate(true_labels):
+        if match(t):
+            d = max(i, len(true_labels))
+            for j, p in enumerate(pred_labels):
+                if match(p) and (p == t or match is _any_para) and abs(i - j) < d:
+                    d = abs(i - j)
+            ttc += d
+    ctt = 0
+    for j, p in enumerate(pred_labels):
+        if match(p):
+            d = max(j, len(pred_labels))
+            for i, t in enumerate(true_labels):
+                if match(t) and (p == t or match is _any_para) and abs(i - j) < d:
+                    d = abs(i - j)
+            ctt += d
+    return (ttc + ctt) / len(true_labels)
+
+
+def _any_para(label):
+    return label != "c"
+
+
+def _to_tokens(words, labels):
+    out = []
+    for w, l in zip(words, labels):
+        out.append(w)
+        if l != "c":
+            out.append(f"[{l}]")
+    return out
+
+
+class TestTDMatchesCHAI:
+    @pytest.fixture
+    def utterances(self):
+        import random
+        rng = random.Random(0)
+        utts = []
+        for _ in range(200):
+            n = rng.randint(1, 12)
+            words = [f"w{k}" for k in range(n)]
+            pick = lambda: rng.choices("cpns", weights=[6, 2, 1, 1])[0]
+            utts.append((words, [pick() for _ in words], [pick() for _ in words]))
+        return utts
+
+    def test_multiclass_matches_chai(self, utterances):
+        refs = [_to_tokens(w, t) for w, t, _ in utterances]
+        hyps = [_to_tokens(w, p) for w, _, p in utterances]
+        ours = compute_td_multiclass(refs, hyps)
+        for cls in "pns":
+            chai = [_chai_td(t, p, lambda l, c=cls: l == c) for _, t, p in utterances]
+            assert ours[cls] == pytest.approx(sum(chai) / len(chai))
+
+    def test_binary_matches_chai(self, utterances):
+        refs = [_to_tokens(w, t) for w, t, _ in utterances]
+        hyps = [_to_tokens(w, p) for w, _, p in utterances]
+        chai = [_chai_td(t, p, _any_para) for _, t, p in utterances]
+        assert compute_td_binary(refs, hyps) == pytest.approx(sum(chai) / len(chai))
+
+    def test_paraphasia_free_utterances_count_as_zero(self):
+        refs = [["a", "[p]", "b"], ["c", "d"]]
+        hyps = [["a", "b", "[p]"], ["c", "d"]]
+        # First utterance: TTC 1 + CTT 1 over 2 words = 1.0; second is 0
+        assert compute_td_binary(refs, hyps) == pytest.approx(0.5)
+
+
 # ---- Utterance-level F1 ------------------------------------------------------
 
 
