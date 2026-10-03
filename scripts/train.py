@@ -20,6 +20,11 @@ Usage:
 
   # Train on [p]/[n] only, leaving [s] to a separate stage
   python scripts/train.py ... --tag_classes pn
+
+Interrupted runs pick up where they left off when re-run with the same
+arguments: --loso skips folds that already have train_metrics.json, and a
+fold in progress resumes from its latest epoch checkpoint (--no-resume to
+start the fold over).
 """
 
 from __future__ import annotations
@@ -44,13 +49,19 @@ from transformers import (
     Seq2SeqTrainingArguments,
     WhisperFeatureExtractor,
 )
+from transformers.trainer_utils import get_last_checkpoint
 
 # Add project root to path when running as script
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from aphasia_modeling.data.dataset import AphasiaBankDataset
 from aphasia_modeling.model.collator import ParaphasiaDataCollator
-from aphasia_modeling.model.trainer import ParaphasiaTrainer
+from aphasia_modeling.model.tokenizer import get_paraphasia_token_ids
+from aphasia_modeling.model.trainer import (
+    ParaphasiaTrainer,
+    make_tag_logits_preprocessor,
+    make_tag_metrics,
+)
 from aphasia_modeling.model.whisper import (
     WhisperParaphasiaConfig,
     build_model,
@@ -102,6 +113,10 @@ def parse_args() -> argparse.Namespace:
                     help="Tag classes in the targets, e.g. 'pns' or 'pn' (others become plain words)")
     p.add_argument("--tag_weight", type=float, default=None,
                     help="Cross-entropy weight on tag tokens (default: unweighted)")
+    p.add_argument("--tag_init", choices=["words", "mean"], default="words",
+                    help="Init tag embeddings from descriptor words, or all from the vocab mean")
+    p.add_argument("--tag_lr_scale", type=float, default=10.0,
+                    help="Tag embedding rows train at this multiple of --lr (1 = no scaling)")
     p.add_argument("--oversample", type=int, default=1,
                     help="Repeat utterances containing paraphasias N times in train")
     p.add_argument("--time_perturbation", action=argparse.BooleanOptionalAction, default=True,
@@ -112,6 +127,9 @@ def parse_args() -> argparse.Namespace:
                     help="Run all LOSO folds")
     p.add_argument("--test_speaker", type=str, default=None,
                     help="Single test speaker for one fold (used if --loso is not set)")
+
+    p.add_argument("--resume", action=argparse.BooleanOptionalAction, default=True,
+                    help="Resume an interrupted fold from its latest checkpoint in output_dir")
 
     # Early stopping
     p.add_argument("--early_stopping", type=int, default=5,
@@ -164,8 +182,10 @@ def train_fold(
     config = WhisperParaphasiaConfig(
         model_name=args.model_name,
         freeze_encoder=args.freeze_encoder,
+        tag_init=args.tag_init,
     )
     model, tokenizer = build_model(config)
+    tag_ids = get_paraphasia_token_ids(tokenizer)
     feature_extractor = WhisperFeatureExtractor.from_pretrained(args.model_name)
 
     collator = ParaphasiaDataCollator(
@@ -246,9 +266,18 @@ def train_fold(
         processing_class=tokenizer,
         callbacks=callbacks,
         class_weights=class_weights,
+        tag_token_ids=list(tag_ids.values()),
+        tag_lr_scale=args.tag_lr_scale,
+        compute_metrics=make_tag_metrics(tag_ids),
+        preprocess_logits_for_metrics=make_tag_logits_preprocessor(list(tag_ids.values())),
     )
 
-    train_result = trainer.train()
+    resume_from = None
+    if args.resume and Path(output_dir).is_dir():
+        resume_from = get_last_checkpoint(output_dir)
+        if resume_from:
+            print(f"Resuming from {resume_from}")
+    train_result = trainer.train(resume_from_checkpoint=resume_from)
 
     # Best checkpoint (by dev loss) is loaded at end; save it as the fold model
     trainer.save_model(output_dir)
@@ -287,6 +316,11 @@ def main():
         all_metrics = []
         for spk in dataset.speakers:
             fold_dir = str(Path(args.output_dir) / f"fold_{spk}")
+            done = Path(fold_dir) / "train_metrics.json"
+            if done.exists():
+                print(f"Fold {spk}: already complete, skipping")
+                all_metrics.append(json.loads(done.read_text()))
+                continue
             all_metrics.append(train_fold(args, dataset, spk, fold_dir))
 
         agg_path = Path(args.output_dir) / "all_fold_metrics.json"

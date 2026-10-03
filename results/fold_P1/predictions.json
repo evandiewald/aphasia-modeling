@@ -1,0 +1,548 @@
+[
+  {
+    "utterance_id": "P1_6W_SW_C7_0000",
+    "speaker_id": "P1",
+    "reference": "southern yoonidaytssayts [n] its its it nice",
+    "hypothesis": "tuthin [p] they [p] would in [p] eggs states is [p] its [p] is nice"
+  },
+  {
+    "utterance_id": "P1_B2_SV_C1_0006",
+    "speaker_id": "P1",
+    "reference": "true the vast ezi [p] day",
+    "hypothesis": "tay [p] they tpast [p] every day"
+  },
+  {
+    "utterance_id": "P1_P2_SV_C4_0005",
+    "speaker_id": "P1",
+    "reference": "help me find the words and say luhli [n]",
+    "hypothesis": "the peak [p] are [p] the words and say to the"
+  },
+  {
+    "utterance_id": "P1_P2_SA_C4_0002",
+    "speaker_id": "P1",
+    "reference": "aphasia affects my language not my intethuhjints [n]",
+    "hypothesis": "uhpayzhuh [p] affects my angwij [p] that time tpuhzuh [p]"
+  },
+  {
+    "utterance_id": "P1_P2_SW_C4_0001",
+    "speaker_id": "P1",
+    "reference": "during the spring it is warm and sunny",
+    "hypothesis": "give me ping [p] it to arm [p] and me [p]"
+  },
+  {
+    "utterance_id": "P1_6W_SE_C7_0002",
+    "speaker_id": "P1",
+    "reference": "pan pan the pambuhld [p] the egg butter and heat heat them up up them over medium heat",
+    "hypothesis": "and kain [p] the [p] sunduhl [p] the [p] by [p] in the tisuhl [p] vats [p] and over cold weez [p] medium heat"
+  },
+  {
+    "utterance_id": "P1_T4_SW_C3_0004",
+    "speaker_id": "P1",
+    "reference": "dee [p] vlesuh [n] is usually cold and dry it eli [p] doze [p]",
+    "hypothesis": "the weather is yoozhuhli [p] coal [p] and dry it fayn [p] does [p]"
+  },
+  {
+    "utterance_id": "P1_6W_SA_C7_0000",
+    "speaker_id": "P1",
+    "reference": "aphasia",
+    "hypothesis": "aphasia"
+  },
+  {
+    "utterance_id": "P1_6W_SA_C6_0000",
+    "speaker_id": "P1",
+    "reference": "have aphasia",
+    "hypothesis": "this is my video"
+  },
+  {
+    "utterance_id": "P1_6W_SW_C6_0004",
+    "speaker_id": "P1",
+    "reference": "the winter is toozuhdeeuh [n] cold and dry and it weli [p] tows [p]",
+    "hypothesis": "the winter is du [p] the cold and dry and it rinday [p] so"
+  },
+  {
+    "utterance_id": "P1_6W_SA_C6_0001",
+    "speaker_id": "P1",
+    "reference": "this means i have didwthi [n] with language",
+    "hypothesis": "this means i have tiz [p] to make wikahi [p] funji [p]"
+  },
+  {
+    "utterance_id": "P1_T6_SW_C2_0002",
+    "speaker_id": "P1",
+    "reference": "tumuh [p] tohmuh [n] is hot it it showers thunduhsohlz [n] every day blunder [s] every day",
+    "hypothesis": "tawmuh [p] is hot and it it showers tunzuhlz [p] every day every day"
+  },
+  {
+    "utterance_id": "P1_T4_SW_C3_0001",
+    "speaker_id": "P1",
+    "reference": "doing [p] the spring is [p] it [p] bawm [p] sunny",
+    "hypothesis": "during the ping [p] is [p] is warm sunny"
+  },
+  {
+    "utterance_id": "P1_B2_SE_C1_0000",
+    "speaker_id": "P1",
+    "reference": "i take [s] eat the eggs for bekfis [p]",
+    "hypothesis": "nahi [p] they eat the eggs or egg tuts [p]"
+  },
+  {
+    "utterance_id": "P1_6W_SW_C6_0001",
+    "speaker_id": "P1",
+    "reference": "yooing [p] the ping [p] it is warm and suii [n]",
+    "hypothesis": "usually weayn [p] it is awwint [p] and tiviti [p]"
+  },
+  {
+    "utterance_id": "P1_P2_SE_C5_0000",
+    "speaker_id": "P1",
+    "reference": "eggs i see [s] eggs okay",
+    "hypothesis": "eggs nah [p] paks [p] eggs okay"
+  },
+  {
+    "utterance_id": "P1_T2_SW_C3_0002",
+    "speaker_id": "P1",
+    "reference": "during the strummer [p] is [p] is hot free [s] terms [s]",
+    "hypothesis": "during the summer is [p] is hot pretty tallz [p]"
+  },
+  {
+    "utterance_id": "P1_P2_SV_C4_0006",
+    "speaker_id": "P1",
+    "reference": "practice using vast every day",
+    "hypothesis": "i d [p] using pab [p] tray say [p]"
+  },
+  {
+    "utterance_id": "P1_T6_SW_C2_0001",
+    "speaker_id": "P1",
+    "reference": "the ting [p] is warm and the tsundi [n]",
+    "hypothesis": "the twayng [p] is [p] the warm and the tunti [p]"
+  },
+  {
+    "utterance_id": "P1_T4_SA_C2_0001",
+    "speaker_id": "P1",
+    "reference": "it the bubble [p] we [p] me is ahngwij [p]",
+    "hypothesis": "the bobble [p] oo [p] mean is kreingooch [p]"
+  },
+  {
+    "utterance_id": "P1_P2_SA_C5_0003",
+    "speaker_id": "P1",
+    "reference": "the",
+    "hypothesis": "vah [p] eegah [p] vah [p]"
+  },
+  {
+    "utterance_id": "P1_6W_SA_C6_0004",
+    "speaker_id": "P1",
+    "reference": "please speak duhenli [p] to me and give me time to buhmyoonikayt [p]",
+    "hypothesis": "is upti [p] the monday [p] to me and inz [p] time to goozh [p] the day"
+  },
+  {
+    "utterance_id": "P1_6W_SV_C6_0002",
+    "speaker_id": "P1",
+    "reference": "i open the this main new [s] the pod [p]",
+    "hypothesis": "i fend [p] is main to the [p] armtuh [p]"
+  },
+  {
+    "utterance_id": "P1_T4_SW_C3_0000",
+    "speaker_id": "P1",
+    "reference": "weloh [n] ayz [n] the peestayts [n] is yooyuhli [p] very peasant [p]",
+    "hypothesis": "ploh [p] is [p] the kipuh [p] free [p] states is yooi [p] very easy"
+  },
+  {
+    "utterance_id": "P1_T4_SA_C2_0000",
+    "speaker_id": "P1",
+    "reference": "i hun [n] uhsfuhayjuh [n]",
+    "hypothesis": "i hain [p] a [p] wajuh [p]"
+  },
+  {
+    "utterance_id": "P1_P2_SA_C4_0000",
+    "speaker_id": "P1",
+    "reference": "i have the aphasia",
+    "hypothesis": "i have the eggpayzhuh [p]"
+  },
+  {
+    "utterance_id": "P1_T6_SV_C3_0000",
+    "speaker_id": "P1",
+    "reference": "fay [n] doon [n] base [s] avuhpi [n] to help me myoonikayt [n] more easily",
+    "hypothesis": "they done [p] face [p] alifayn [p] to help me myoonikayt [p] more easily"
+  },
+  {
+    "utterance_id": "P1_6W_SV_C6_0003",
+    "speaker_id": "P1",
+    "reference": "then i choose kip [p] i want [s] like to use",
+    "hypothesis": "then i choose the find more like to use"
+  },
+  {
+    "utterance_id": "P1_P2_SA_C4_0004",
+    "speaker_id": "P1",
+    "reference": "peas [p] eep [n] rekli [n] to me and give me time to maytmyootitayt [n]",
+    "hypothesis": "is the day to eskip [p] me time to make myosuh [p] eggs"
+  },
+  {
+    "utterance_id": "P1_6W_SW_C7_0004",
+    "speaker_id": "P1",
+    "reference": "at the winter it it cold and dry and it dont dont at all tow [p] there months",
+    "hypothesis": "as its winter it is cold and lie [p] and it dont get all cold the [p] visit the [p] fuch [p]"
+  },
+  {
+    "utterance_id": "P1_P2_SE_C5_0002",
+    "speaker_id": "P1",
+    "reference": "you crack the pan then you butter the heat only [s] medium heat",
+    "hypothesis": "you crack the pan and heat butter and heat noi [p] medium heat"
+  },
+  {
+    "utterance_id": "P1_T2_SW_C3_0004",
+    "speaker_id": "P1",
+    "reference": "the wuth [n] is yoozhoouhi [p] cold and dry and it raynzi [n] sews [p]",
+    "hypothesis": "though [p] what is [p] usually hold [p] and why [p] and it aynzi [p] soz [p]"
+  },
+  {
+    "utterance_id": "P1_T4_SW_C3_0003",
+    "speaker_id": "P1",
+    "reference": "dee [p] fall is [p] is kood [p] the leaves uhschaynj [n] tuluhz [p]",
+    "hypothesis": "the fall is is noon [p] the [p] upright [p] the [p] are shayn [p] to ties [p]"
+  },
+  {
+    "utterance_id": "P1_B2_SW_C1_0003",
+    "speaker_id": "P1",
+    "reference": "during the fall this [s] is tool [p] and the leaves turn ttuhz [n]",
+    "hypothesis": "during the fall this is [p] to [p] and the leaves et [p] turn tirtis [p]"
+  },
+  {
+    "utterance_id": "P1_6W_SW_C7_0003",
+    "speaker_id": "P1",
+    "reference": "in fall is tool [p] and the the needs [s] is chain [p] colors",
+    "hypothesis": "in all its [p] to make the [p] meaj [p] isntain [p] the kuhliz [p]"
+  },
+  {
+    "utterance_id": "P1_6W_SW_C7_0002",
+    "speaker_id": "P1",
+    "reference": "fall [s] fall [s] bummer [p] it get [s] hot and rains oh every day",
+    "hypothesis": "fall fall summer we get hot and rain [p] oh [p] every day"
+  },
+  {
+    "utterance_id": "P1_B2_SV_C1_0001",
+    "speaker_id": "P1",
+    "reference": "felmay [n] is easy to lose [p]",
+    "hypothesis": "feli [p] is easy to use"
+  },
+  {
+    "utterance_id": "P1_6W_SW_C6_0000",
+    "speaker_id": "P1",
+    "reference": "weather is [p] this suluhdeen [n] state [s] states [s] is usually fuzhuh [n] present [p]",
+    "hypothesis": "the [p] is this [p] a [p] day states is easily right here pezit [p]"
+  },
+  {
+    "utterance_id": "P1_T6_SV_C3_0005",
+    "speaker_id": "P1",
+    "reference": "he [p] me find the words say theem [p] eluhi [n]",
+    "hypothesis": "they find the words say thee [p] edi [p]"
+  },
+  {
+    "utterance_id": "P1_B2_SV_C1_0004",
+    "speaker_id": "P1",
+    "reference": "i woon [n] a choon [n] peet [n]",
+    "hypothesis": "i womb [p] at [p] term [p] eat [p]"
+  },
+  {
+    "utterance_id": "P1_B2_SE_C1_0003",
+    "speaker_id": "P1",
+    "reference": "i quack [p] the eggs into the pan and t [p]",
+    "hypothesis": "i whack [p] the eggs into the pan and twiter [p]"
+  },
+  {
+    "utterance_id": "P1_P2_SE_C4_0000",
+    "speaker_id": "P1",
+    "reference": "aid [n] to eat ambuhlin [n] eggs for beks [n]",
+    "hypothesis": "i to eat iuh [p] eggs for breakfast"
+  },
+  {
+    "utterance_id": "P1_P2_SW_C5_0001",
+    "speaker_id": "P1",
+    "reference": "spu [p] spring it it [p] warm and sunny",
+    "hypothesis": "the spayn [p] to it [p] is [p] warm and sunny"
+  },
+  {
+    "utterance_id": "P1_T6_SV_C3_0003",
+    "speaker_id": "P1",
+    "reference": "en [p] i choose the tripped [p] i wanna use",
+    "hypothesis": "in [p] i chewed [p] they [p] to [p] i would [p] to use"
+  },
+  {
+    "utterance_id": "P1_6W_SV_C6_0005",
+    "speaker_id": "P1",
+    "reference": "help me find the word see [p] them hidi [n]",
+    "hypothesis": "uptahis [p] to find the words sheeheen [p] easy"
+  },
+  {
+    "utterance_id": "P1_T6_SW_C2_0003",
+    "speaker_id": "P1",
+    "reference": "fall is cool and the change colors leaves change colors",
+    "hypothesis": "fall is cool and the day is change [p] colors leaves change the colors"
+  },
+  {
+    "utterance_id": "P1_B2_SV_C1_0005",
+    "speaker_id": "P1",
+    "reference": "it helps me tahind [p] this [s] words and say thing [s] izli [n]",
+    "hypothesis": "it elf [p] me tahin [p] this words and sayzing [p] inzli [p]"
+  },
+  {
+    "utterance_id": "P1_6W_SV_C6_0004",
+    "speaker_id": "P1",
+    "reference": "i watch petuhn [n] peak [p]",
+    "hypothesis": "how i [p] etuhn [p] speak"
+  },
+  {
+    "utterance_id": "P1_P2_SV_C4_0002",
+    "speaker_id": "P1",
+    "reference": "they past [p] main menu the pod [p]",
+    "hypothesis": "i have main video thedi [p] time"
+  },
+  {
+    "utterance_id": "P1_P2_SV_C4_0001",
+    "speaker_id": "P1",
+    "reference": "is easy to use",
+    "hypothesis": "easy to use"
+  },
+  {
+    "utterance_id": "P1_6W_SE_C6_0004",
+    "speaker_id": "P1",
+    "reference": "i to make best so i stir entun [n] they un [n] done",
+    "hypothesis": "i du [p] e [p] ast [p] and then they are done"
+  },
+  {
+    "utterance_id": "P1_6W_SA_C6_0002",
+    "speaker_id": "P1",
+    "reference": "aphasia fekts [p] my language not my ditikuhlt [n]",
+    "hypothesis": "i do [p] my language my dith [p]"
+  },
+  {
+    "utterance_id": "P1_P2_SE_C4_0002",
+    "speaker_id": "P1",
+    "reference": "make eggs get out pan and melt the butter eeduhm [n] heat",
+    "hypothesis": "eggs then in [p] not a fur [p] either eat [p]"
+  },
+  {
+    "utterance_id": "P1_6W_SW_C6_0003",
+    "speaker_id": "P1",
+    "reference": "during the fall it is cool and the leaves change eschuhl [n]",
+    "hypothesis": "during the fall it is cool [p] and to theed [p] ang [p] its done"
+  },
+  {
+    "utterance_id": "P1_P2_SV_C4_0003",
+    "speaker_id": "P1",
+    "reference": "choose the sep [n] i would like to use",
+    "hypothesis": "to perfef [p] i thought i tind [p] use"
+  },
+  {
+    "utterance_id": "P1_6W_SE_C6_0003",
+    "speaker_id": "P1",
+    "reference": "i dot [s] those [s] egg into the pan and t [p]",
+    "hypothesis": "i got a egg into the pan and stir"
+  },
+  {
+    "utterance_id": "P1_T4_SW_C3_0002",
+    "speaker_id": "P1",
+    "reference": "during the tumuh [p] is hot with feekwint [p] tunduhstawnz [n]",
+    "hypothesis": "during the summer its hot with a wind [p] thunderstorm"
+  },
+  {
+    "utterance_id": "P1_P2_SV_C4_0004",
+    "speaker_id": "P1",
+    "reference": "watch a pesuhn [p] speak",
+    "hypothesis": "mark [p] the pastuhn [p] speak"
+  },
+  {
+    "utterance_id": "P1_T6_SV_C3_0006",
+    "speaker_id": "P1",
+    "reference": "penti [n] using vee [n] every day",
+    "hypothesis": "pwnti [p] using the [p] every day"
+  },
+  {
+    "utterance_id": "P1_T6_SV_C3_0004",
+    "speaker_id": "P1",
+    "reference": "want [p] a person peak [p]",
+    "hypothesis": "work [p] at [p] su [p] heat"
+  },
+  {
+    "utterance_id": "P1_T2_SE_C2_0000",
+    "speaker_id": "P1",
+    "reference": "i like to eggs right tu [p] morning i wawuh [p] order panguhld [n] eggs pour [p] betis [n] beks [n]",
+    "hypothesis": "i like to eggs no i to mornin [p] i wanna script [p] quanguhl [p] eggs for rhej [p] eggs"
+  },
+  {
+    "utterance_id": "P1_6W_SE_C6_0001",
+    "speaker_id": "P1",
+    "reference": "i like team [s] because ay [p] easy [s] and easy",
+    "hypothesis": "my liking fall [p] eezi [p] andoozi [p]"
+  },
+  {
+    "utterance_id": "P1_T6_SV_C3_0001",
+    "speaker_id": "P1",
+    "reference": "very [s] is ee [n] to use",
+    "hypothesis": "feuhi [p] is e [p] to use"
+  },
+  {
+    "utterance_id": "P1_B2_SE_C1_0002",
+    "speaker_id": "P1",
+    "reference": "to make eggs i baked [s] out the pan and melt din [n] butter ohvn [p] medium heat",
+    "hypothesis": "to make eggs i make du [p] the pan and melt the butter over medium heat"
+  },
+  {
+    "utterance_id": "P1_6W_SE_C7_0003",
+    "speaker_id": "P1",
+    "reference": "egg is track [p] the eggs in the sh [p] and sir [p]",
+    "hypothesis": "in there is crack [p] eggs in them suh [p]"
+  },
+  {
+    "utterance_id": "P1_B2_SA_C1_0004",
+    "speaker_id": "P1",
+    "reference": "fees [p] speak directing to me and din [n] me time for myoonikayt [n]",
+    "hypothesis": "please me to write things to me and then me time for younuhkayt [p]"
+  },
+  {
+    "utterance_id": "P1_B2_SA_C1_0000",
+    "speaker_id": "P1",
+    "reference": "the fayjuh [n]",
+    "hypothesis": "at the fayzhuh [p]"
+  },
+  {
+    "utterance_id": "P1_T2_SW_C3_0001",
+    "speaker_id": "P1",
+    "reference": "during the tping is [p] is form [p] and sunny",
+    "hypothesis": "during the ping [p] is [p] is form [p] and sunny"
+  },
+  {
+    "utterance_id": "P1_B2_SV_C1_0003",
+    "speaker_id": "P1",
+    "reference": "thayd [n] i choose the script i would like to use",
+    "hypothesis": "they [p] i choose the sphip [p] i would like to use"
+  },
+  {
+    "utterance_id": "P1_P2_SA_C5_0000",
+    "speaker_id": "P1",
+    "reference": "okay i have uhpayzhuh [p]",
+    "hypothesis": "oofay [p] i has [p] a [p] fayzhuh [p]"
+  },
+  {
+    "utterance_id": "P1_T6_SV_C3_0002",
+    "speaker_id": "P1",
+    "reference": "i lohloh [n] vast fum [p] the main menu on the ahidahoo [n]",
+    "hypothesis": "i no [p] the [p] vast from the ee [p] video on the ahjahuh [p]"
+  },
+  {
+    "utterance_id": "P1_B2_SA_C1_0002",
+    "speaker_id": "P1",
+    "reference": "aphasia aphasics [s] me langij [p] not may [p] teleeints [n]",
+    "hypothesis": "aphasia aphasia mean anguish [p] not main tidiids [p]"
+  },
+  {
+    "utterance_id": "P1_P2_SE_C4_0001",
+    "speaker_id": "P1",
+    "reference": "i like them because they are pam [n] and easy",
+    "hypothesis": "i like the [p] because they are empty"
+  },
+  {
+    "utterance_id": "P1_P2_SE_C5_0003",
+    "speaker_id": "P1",
+    "reference": "the [s] crack the eggs into the pan and ts [p]",
+    "hypothesis": "i to pepuh [p] eggs into the pan and shoh [p]"
+  },
+  {
+    "utterance_id": "P1_6W_SA_C7_0002",
+    "speaker_id": "P1",
+    "reference": "it speaks it it meech [p] it beach [p] beets [s]",
+    "hypothesis": "it make [p] a [p] to meech [p] a [p] speech"
+  },
+  {
+    "utterance_id": "P1_6W_SE_C6_0000",
+    "speaker_id": "P1",
+    "reference": "like to eat kambin [n] eggs pour [p] beksis [n]",
+    "hypothesis": "i to eat anin [p] eggs for breakfast"
+  },
+  {
+    "utterance_id": "P1_6W_SA_C6_0003",
+    "speaker_id": "P1",
+    "reference": "it is hard to [s] me to understand what people are tsayng [p] and to find a [p] springs [s] to seek [p] my thoughts",
+    "hypothesis": "it is hard to me [p] to understand what thewislt [p] are chaining [p] to time [p] the sping [p] to take my thoughts"
+  },
+  {
+    "utterance_id": "P1_T2_SE_C2_0003",
+    "speaker_id": "P1",
+    "reference": "and kakting [n] the eggs put them on a pan and and and sir [p]",
+    "hypothesis": "and quackting [p] eggs putim [p] only pan in in sir [p]"
+  },
+  {
+    "utterance_id": "P1_B2_SW_C1_0004",
+    "speaker_id": "P1",
+    "reference": "is [s] minduh [n] is dohndeeuhl [n] hall [s] and rye [p] and it ez [n] snows",
+    "hypothesis": "is [p] winter is oondiuhl [p] hot and rye [p] and it airs [p] snows"
+  },
+  {
+    "utterance_id": "P1_P2_SW_C5_0002",
+    "speaker_id": "P1",
+    "reference": "the fall [s] hmhm summer is hot and the twayn [p] at weather the train the tunduhsawmz [n] that all the time",
+    "hypothesis": "they fall the pipsawmuh [p] wee [p] pine [p] it is a [p] a [p] plane [p] that weather the ping [p] are the tunzhuhawnz [p] is awli [p] pan"
+  },
+  {
+    "utterance_id": "P1_6W_SV_C6_0001",
+    "speaker_id": "P1",
+    "reference": "vast is easy you [p]",
+    "hypothesis": "and is easy to use"
+  },
+  {
+    "utterance_id": "P1_T6_SW_C2_0004",
+    "speaker_id": "P1",
+    "reference": "dee [p] winter is cold and dry and we dont get that no no tow [p] pretty much",
+    "hypothesis": "the winter is cold and dry and with no with that no no its cold already much"
+  },
+  {
+    "utterance_id": "P1_T2_SW_C3_0003",
+    "speaker_id": "P1",
+    "reference": "the fall it is coal [p] and frun [n] leaves change colors",
+    "hypothesis": "the fall it is coal [p] and from these change [p] zetuhliz [p]"
+  },
+  {
+    "utterance_id": "P1_B2_SV_C1_0002",
+    "speaker_id": "P1",
+    "reference": "i lohpind [n] vast from the main menu on the tayt [n]",
+    "hypothesis": "i lofent [p] that [p] from the een [p] menu on the say [p]"
+  },
+  {
+    "utterance_id": "P1_P2_SA_C4_0001",
+    "speaker_id": "P1",
+    "reference": "this means i have difooltay [n] with language",
+    "hypothesis": "this means i have tibuhfay [p] tibuhfayt [p]"
+  },
+  {
+    "utterance_id": "P1_6W_SW_C6_0002",
+    "speaker_id": "P1",
+    "reference": "during the psut [n] it is hot with kunchuhhohm [n]",
+    "hypothesis": "during the sun it is i [p] the kunduhchuhl [p]"
+  },
+  {
+    "utterance_id": "P1_B2_SW_C1_0002",
+    "speaker_id": "P1",
+    "reference": "dooduhing [n] the thumuh [p] it is hot and the feedi [n] thunduhingthawn [n]",
+    "hypothesis": "during the summer it is hot in the fleeting [p] thunduhayn [p]"
+  },
+  {
+    "utterance_id": "P1_6W_SV_C6_0006",
+    "speaker_id": "P1",
+    "reference": "patsi [n] using gav [n] every day",
+    "hypothesis": "pakti [p] using vat [p] every day"
+  },
+  {
+    "utterance_id": "P1_6W_SE_C6_0002",
+    "speaker_id": "P1",
+    "reference": "make eggs i get out the pan and melt the butter over medium heat",
+    "hypothesis": "place eggs at the pan and stir this butter over medium heat"
+  },
+  {
+    "utterance_id": "P1_P2_SA_C4_0003",
+    "speaker_id": "P1",
+    "reference": "it it [p] hard for me for [s] unstand [n] what it peekuhl [p] are saying and to find the word to sweek [p] my thoughts",
+    "hypothesis": "is hard for eed [p] for the sand [p] the eethuhl [p] are sayn [p] and to nahin [p] the burr [p] to sayn [p] melt"
+  },
+  {
+    "utterance_id": "P1_B2_SW_C1_0001",
+    "speaker_id": "P1",
+    "reference": "yoozhin [n] the fing [p] it is won [s] and sunny",
+    "hypothesis": "using the fayn [p] it is fun [p] and sunny"
+  }
+]

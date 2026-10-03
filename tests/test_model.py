@@ -16,7 +16,13 @@ from aphasia_modeling.model.tokenizer import (
     get_paraphasia_token_ids,
     normalize_output,
 )
+from aphasia_modeling.model.trainer import (
+    _scale_row_updates,
+    make_tag_logits_preprocessor,
+    make_tag_metrics,
+)
 from aphasia_modeling.model.whisper import (
+    TAG_INIT_WORDS,
     WhisperParaphasiaConfig,
     build_model,
     freeze_encoder,
@@ -97,8 +103,18 @@ class TestModel:
         model, tokenizer = model_and_tokenizer
         assert model.get_input_embeddings().weight.shape[0] == len(tokenizer)
 
-    def test_new_embeddings_mean_initialized(self, model_and_tokenizer):
+    def test_tag_embeddings_from_descriptor_words(self, model_and_tokenizer):
         model, tokenizer = model_and_tokenizer
+        embed = model.get_input_embeddings().weight
+        tag_ids = get_paraphasia_token_ids(tokenizer)
+        for tag, word in TAG_INIT_WORDS.items():
+            word_ids = tokenizer(word, add_special_tokens=False).input_ids
+            assert torch.allclose(embed[tag_ids[tag]], embed[word_ids].mean(dim=0), atol=1e-5)
+        rows = embed[list(tag_ids.values())]
+        assert torch.cdist(rows, rows).fill_diagonal_(1.0).min() > 0.1
+
+    def test_tag_embeddings_mean_option(self):
+        model, _ = build_model(WhisperParaphasiaConfig(model_name=MODEL_NAME, tag_init="mean"))
         embed = model.get_input_embeddings().weight
         n_new = len(PARAPHASIA_TOKENS)
         expected = embed[:-n_new].mean(dim=0)
@@ -124,6 +140,35 @@ class TestModel:
         assert weights.shape == (len(tokenizer),)
         assert (weights[tag_ids] == 5.0).all()
         assert weights.sum() == len(tokenizer) - 3 + 15.0
+
+
+# ---- Trainer helpers ---------------------------------------------------------
+
+
+class TestTagTraining:
+    def test_scale_row_updates(self):
+        weight = torch.nn.Parameter(torch.zeros(4, 2))
+        opt = torch.optim.SGD([weight], lr=1.0)
+        _scale_row_updates(opt, weight, rows=[1, 3], scale=10.0)
+        weight.grad = -torch.ones(4, 2)
+        opt.step()
+        assert torch.allclose(weight[[0, 2]], torch.ones(2, 2))
+        assert torch.allclose(weight[[1, 3]], torch.full((2, 2), 10.0))
+
+    def test_tag_metrics_detect_collapse(self):
+        tag_ids = {"[p]": 10, "[n]": 11, "[s]": 12}
+        labels = torch.tensor([[5, 10, 6, 11, 7, 12, -100]])
+        logits = torch.zeros(1, 7, 13)
+        for t, tok in enumerate([5, 10, 6, 7, 7, 10, 0]):  # never emits [n]/[s]
+            logits[0, t, tok] = 5.0
+        logits[0, 3, 11] = 3.0  # but [n] beats [p] among the tags where [n] is correct
+        logits[0, 3, 10] = 2.0
+        ids = make_tag_logits_preprocessor(list(tag_ids.values()))(logits, labels)
+        m = make_tag_metrics(tag_ids)(type("P", (), {"predictions": ids.numpy(), "label_ids": labels.numpy()}))
+        assert (m["ref_p"], m["ref_n"], m["ref_s"]) == (1, 1, 1)
+        assert (m["pred_p"], m["pred_n"], m["pred_s"]) == (2, 0, 0)
+        assert m["recall_p"] == 1.0 and m["recall_n"] == 0.0
+        assert m["tag_class_acc"] == 2 / 3
 
 
 # ---- Collator ----------------------------------------------------------------

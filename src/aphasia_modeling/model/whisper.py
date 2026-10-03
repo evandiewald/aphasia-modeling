@@ -2,7 +2,7 @@
 
 Handles:
 - Loading pretrained Whisper and resizing embeddings for the tag tokens
-- Mean-initializing the new tag embeddings
+- Initializing each tag embedding from a distinct descriptor word
 - Configuring generation so the tags aren't suppressed
 - Optional encoder freezing and per-token loss weights for the tags
 """
@@ -20,6 +20,8 @@ from transformers import (
 
 from .tokenizer import build_tokenizer, get_paraphasia_token_ids
 
+TAG_INIT_WORDS = {"[p]": " phonemic", "[n]": " neologism", "[s]": " semantic"}
+
 
 @dataclass
 class WhisperParaphasiaConfig:
@@ -29,8 +31,11 @@ class WhisperParaphasiaConfig:
     language: str = "en"
     task: str = "transcribe"
     freeze_encoder: bool = False
-    # Initialize new token embeddings as mean of existing embeddings
-    init_new_embeddings_from_mean: bool = True
+    # "words": each tag starts from its descriptor word (TAG_INIT_WORDS);
+    # "mean": all tags start from the vocab mean. Whisper ties the output
+    # projection to these embeddings, so mean-init tags score identically and
+    # at a low LR never separate (the model collapses onto [p]).
+    tag_init: str = "words"
 
 
 def build_model(
@@ -62,8 +67,7 @@ def build_model(
     old_vocab_size = model.get_input_embeddings().weight.shape[0]
     if len(tokenizer) > old_vocab_size:
         model.resize_token_embeddings(len(tokenizer), mean_resizing=False)
-        if config.init_new_embeddings_from_mean:
-            _init_new_embeddings(model, old_vocab_size)
+        _init_new_embeddings(model, tokenizer, old_vocab_size, config.tag_init)
 
     if config.freeze_encoder:
         freeze_encoder(model)
@@ -98,20 +102,35 @@ def get_class_weight_tensor(
 
 def _init_new_embeddings(
     model: WhisperForConditionalGeneration,
+    tokenizer: WhisperTokenizerFast,
     old_vocab_size: int,
+    tag_init: str,
 ) -> None:
-    """Initialize new token embeddings as the mean of existing embeddings.
+    """Initialize the new tag embeddings.
 
-    Whisper ties proj_out to embed_tokens, so this covers the output
-    projection too; untied heads are handled separately just in case.
+    "words" sets each tag to the mean embedding of its descriptor word's
+    subword tokens, so the tags start apart; "mean" uses the vocab mean for
+    all of them. Whisper ties proj_out to embed_tokens, so this covers the
+    output projection too; untied heads are handled separately just in case.
     """
+    if tag_init not in ("words", "mean"):
+        raise ValueError(f"tag_init must be 'words' or 'mean', got {tag_init!r}")
+    tag_ids = get_paraphasia_token_ids(tokenizer)
+
+    def init(weight: torch.Tensor) -> None:
+        weight[old_vocab_size:] = weight[:old_vocab_size].mean(dim=0)
+        if tag_init == "words":
+            for tag, word in TAG_INIT_WORDS.items():
+                word_ids = tokenizer(word, add_special_tokens=False).input_ids
+                weight[tag_ids[tag]] = weight[word_ids].mean(dim=0)
+
     with torch.no_grad():
         embed = model.get_input_embeddings().weight
-        embed[old_vocab_size:] = embed[:old_vocab_size].mean(dim=0)
+        init(embed)
 
         proj = model.get_output_embeddings().weight
         if proj.data_ptr() != embed.data_ptr():
-            proj[old_vocab_size:] = proj[:old_vocab_size].mean(dim=0)
+            init(proj)
 
 
 def _build_generation_config(
